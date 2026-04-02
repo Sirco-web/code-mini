@@ -1,0 +1,2823 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Code Mini</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75' fill='%23667eea'>🎮</text></svg>">
+    <!-- Pako library for gzip decompression -->
+    <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+    <script>
+        // Ensure pako is available
+        const pakoReady = new Promise((resolve) => {
+            const checkPako = () => {
+                if (typeof pako !== 'undefined') {
+                    console.log('✓ Pako loaded and available');
+                    resolve();
+                } else {
+                    setTimeout(checkPako, 10);
+                }
+            };
+            checkPako();
+        });
+    </script>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        
+        body {
+            background-color: #f5f5f5;
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        
+        .header {
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .header-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .header-settings-btn {
+            background: rgba(255,255,255,0.18);
+            color: white;
+            border: 2px solid rgba(255,255,255,0.35);
+            border-radius: 999px;
+            padding: 10px 16px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: background 0.2s, border-color 0.2s;
+            white-space: nowrap;
+        }
+
+        .header-settings-btn:hover {
+            background: rgba(255,255,255,0.3);
+            border-color: rgba(255,255,255,0.6);
+        }
+        
+        .search-container {
+            display: flex;
+            gap: 10px;
+            max-width: 600px;
+            margin: 0 auto;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .search-bar {
+            flex: 1;
+            min-width: 250px;
+            padding: 12px 16px;
+            border: none;
+            border-radius: 25px;
+            font-size: 14px;
+            background: white;
+            color: #333;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            transition: box-shadow 0.2s;
+        }
+        
+        .search-bar:focus {
+            outline: none;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+        }
+        
+        .clear-search {
+            background: rgba(255,255,255,0.3);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            cursor: pointer;
+            font-size: 18px;
+            display: none;
+        }
+
+        .clear-search.visible {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .clear-search:hover {
+            background: rgba(255,255,255,0.5);
+        }
+        
+        .content {
+            padding: 30px 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .section {
+            margin-bottom: 50px;
+        }
+        
+        .section-title {
+            text-align: left;
+            font-size: 20px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #667eea;
+        }
+        
+        .game-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width, 150px), 1fr));
+            gap: 20px;
+            margin-left: 0;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+        }
+        
+        .card-icon {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-size: 40px;
+            padding: 30px;
+            text-align: center;
+            min-height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .card-cover {
+            width: 100%;
+            min-height: 120px;
+            object-fit: cover;
+            display: block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .card-name {
+            padding: 15px;
+            font-weight: 600;
+            color: #333;
+            text-align: center;
+            flex-grow: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            word-break: break-word;
+            font-size: 13px;
+        }
+        
+        #loading {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #667eea;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        #loading.visible {
+            display: block;
+        }
+        
+        /* Game Viewer Modal */
+        #gameViewer {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: black;
+            z-index: 1000;
+            flex-direction: column;
+        }
+
+        #gameViewer.visible {
+            display: flex;
+        }
+        
+        .viewer-header {
+            background: #333;
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        .viewer-title {
+            flex: 1;
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        .viewer-controls button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: 10px;
+            transition: background 0.2s;
+        }
+        
+        .viewer-controls button:hover {
+            background: #764ba2;
+        }
+        
+        .viewer-controls button.close {
+            background: #dc3545;
+        }
+        
+        .viewer-controls button.close:hover {
+            background: #c82333;
+        }
+
+        #gameFrame {
+            flex: 1;
+            border: none;
+            width: 100%;
+            display: block;
+            background: #111;
+        }
+
+        .fallback-message {
+            padding: 20px;
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        footer {
+            background: #f5f5f5;
+            border-top: 1px solid #ddd;
+            padding: 20px;
+            text-align: center;
+            color: #666;
+            font-size: 12px;
+        }
+
+        footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Offline Download */
+        .offline-section {
+            margin-top: 15px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        #offlineBtn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 2px solid rgba(255,255,255,0.4);
+            padding: 10px 20px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: background 0.2s, border-color 0.2s;
+        }
+
+        #offlineBtn:hover:not(:disabled) {
+            background: rgba(255,255,255,0.35);
+            border-color: rgba(255,255,255,0.7);
+        }
+
+        #offlineBtn:disabled {
+            opacity: 0.7;
+            cursor: default;
+        }
+
+        .offline-progress-wrap {
+            width: 100%;
+            max-width: 500px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 10px;
+            height: 8px;
+            overflow: hidden;
+            display: none;
+        }
+
+        .offline-progress-wrap.visible {
+            display: block;
+        }
+
+        #offlineProgress {
+            height: 100%;
+            background: #4caf50;
+            border-radius: 10px;
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        #offlineStatus {
+            color: rgba(255,255,255,0.8);
+            font-size: 12px;
+        }
+
+        #offlineCancelBtn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+            padding: 6px 14px;
+            border-radius: 15px;
+            cursor: pointer;
+            font-size: 12px;
+            display: none;
+        }
+
+        #offlineCancelBtn:hover {
+            background: rgba(255,255,255,0.35);
+        }
+
+        .viewer-controls button.fullscreen-btn {
+            background: #28a745;
+        }
+
+        .viewer-controls button.fullscreen-btn:hover {
+            background: #218838;
+        }
+
+        .viewer-controls button.fav-btn {
+            background: #e91e63;
+        }
+
+        .viewer-controls button.fav-btn:hover {
+            background: #c2185b;
+        }
+
+        #clearCacheLink {
+            color: rgba(255,255,255,0.6);
+            font-size: 11px;
+            text-decoration: none;
+        }
+
+        #clearCacheLink:hover {
+            color: white;
+        }
+
+        .info-banner {
+            background: #fff3cd;
+            color: #856404;
+            padding: 12px 40px 12px 16px;
+            font-size: 13px;
+            text-align: center;
+            position: relative;
+            border-bottom: 1px solid #ffc107;
+        }
+
+        .info-banner .dismiss-banner {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: #856404;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 4px 8px;
+            line-height: 1;
+        }
+
+        .info-banner .dismiss-banner:hover {
+            color: #533f03;
+        }
+
+        .settings-backdrop {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(17, 24, 39, 0.5);
+            z-index: 1490;
+        }
+
+        .settings-backdrop.visible {
+            display: block;
+        }
+
+        .settings-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 16px;
+        }
+
+        .settings-card {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 16px;
+        }
+
+        .settings-card h4 {
+            margin: 0 0 14px 0;
+            font-size: 15px;
+            color: #111827;
+        }
+
+        .settings-field {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 12px;
+            color: #374151;
+            font-size: 14px;
+        }
+
+        .settings-field:last-child {
+            margin-bottom: 0;
+        }
+
+        .settings-field select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 10px;
+            background: white;
+            font-size: 14px;
+        }
+
+        .settings-toggle {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 10px 0;
+            color: #374151;
+            font-size: 14px;
+        }
+
+        .settings-toggle input {
+            margin-top: 2px;
+        }
+
+        .settings-action {
+            width: 100%;
+            padding: 12px;
+            background: #f3f4f6;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 14px;
+            text-align: left;
+            transition: background 0.2s, border-color 0.2s;
+        }
+
+        .settings-action:hover {
+            background: #e5e7eb;
+            border-color: #d1d5db;
+        }
+
+        .settings-meta {
+            margin-top: 8px;
+            color: #6b7280;
+            font-size: 12px;
+        }
+
+        @media (max-width: 700px) {
+            .header-top {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .header-actions {
+                justify-content: flex-end;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="info-banner" id="infoBanner">
+        ⚠️ Games now open in same-tab mode by default for better compatibility. Use the embedded viewer only when you specifically want it.
+        <button class="dismiss-banner" onclick="dismissInfoBanner()">✕</button>
+    </div>
+    <script>if(localStorage.getItem('gn_banner_dismissed')==='1') document.getElementById('infoBanner').style.display='none';</script>
+    <div class="header">
+        <div class="header-top">
+            <h1>📚 Code Universe Dictionary</h1>
+            <div class="header-actions">
+                <button class="header-settings-btn" onclick="toggleSettingsPanel(true)">⚙️ Settings</button>
+            </div>
+        </div>
+        <div class="search-container">
+            <input type="text" class="search-bar" id="searchInput" placeholder="Search games...">
+            <button class="clear-search" id="clearBtn">✕</button>
+        </div>
+        <div class="offline-section">
+            <button id="offlineBtn" onclick="handleOfflineAction()" style="display:none">📥 Download All for Offline</button>
+            <button id="offlineCancelBtn" onclick="cancelOfflineDownload()">Cancel</button>
+            <span id="offlineStatus"></span>
+            <a href="#" id="clearCacheLink" onclick="clearOfflineCache(); return false;" style="display:none">clear cache</a>
+        </div>
+        <div class="offline-section">
+            <div class="offline-progress-wrap" id="offlineProgressWrap">
+                <div id="offlineProgress"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="loading">Loading...</div>
+
+    <div class="content">
+        <div class="section" id="recentSection">
+            <div class="section-title">⭐ Recently Played</div>
+            <div class="game-container" id="recentContainer"></div>
+        </div>
+
+        <div class="section" id="favoritesSection">
+            <div class="section-title">❤️ Favorites</div>
+            <div class="game-container" id="favContainer"></div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">🎮 All Games</div>
+            <div class="game-container" id="gamesContainer"></div>
+        </div>
+    </div>
+
+    <!-- Game Viewer Modal -->
+    <div id="gameViewer">
+        <div class="viewer-header">
+            <div class="viewer-title" id="gameName">Game</div>
+            <div class="viewer-controls">
+                <button class="fav-btn" id="favBtn" onclick="toggleViewerFav()">♡ Fav</button>
+                <button onclick="openInSameTab()">🧭 Same Tab</button>
+                <button onclick="openInNewTab()">📑 New Tab</button>
+                <button class="fullscreen-btn" id="fsBtn" onclick="toggleFullscreen()">🔲 Fullscreen</button>
+                <button class="close" onclick="closeViewer()">✕ Close</button>
+            </div>
+        </div>
+        <iframe id="gameFrame" allow="autoplay; fullscreen; accelerometer; gyroscope; magnetometer;"></iframe>
+    </div>
+
+    <footer>
+        <p>🎮 Code Universe Dictionary — Access 700+ Games</p>
+        <p style="margin-top:6px;font-size:11px;color:#999">These games are hosted by third-party partners and are not owned, operated, or endorsed by Code Universe. All game content belongs to its respective creators.</p>
+        <p style="margin-top:8px"><a href="#" onclick="toggleSettingsPanel(true); return false;">⚙️ Settings</a></p>
+    </footer>
+
+    <!-- Settings Panel -->
+    <div id="settingsBackdrop" class="settings-backdrop" onclick="toggleSettingsPanel(false)"></div>
+    <div id="settingsPanel" style="display:none;position:fixed;bottom:0;left:0;right:0;background:#fff;box-shadow:0 -4px 20px rgba(0,0,0,0.15);border-radius:16px 16px 0 0;padding:24px;z-index:1500;max-height:50vh;overflow-y:auto;transition:transform 0.3s ease;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <h3 style="margin:0;font-size:18px;">⚙️ Settings</h3>
+            <button onclick="toggleSettingsPanel(false)" style="background:none;border:none;font-size:22px;cursor:pointer;padding:4px 8px;">✕</button>
+        </div>
+        <div class="settings-grid">
+            <div class="settings-card">
+                <h4>Launch</h4>
+                <label class="settings-field">
+                    <span>Default launch mode</span>
+                    <select id="defaultLaunchModeSetting" onchange="updateSetting('defaultLaunchMode', this.value)">
+                        <option value="same-tab">Same Tab</option>
+                        <option value="viewer">Viewer</option>
+                        <option value="new-tab">New Tab</option>
+                    </select>
+                </label>
+                <label class="settings-toggle">
+                    <input type="checkbox" id="autoCacheOnPlaySetting" onchange="updateSetting('autoCacheOnPlay', this.checked)">
+                    <span>Automatically cache a game when you open it</span>
+                </label>
+                <label class="settings-toggle">
+                    <input type="checkbox" id="preferOfflineCacheSetting" onchange="updateSetting('preferOfflineCache', this.checked)">
+                    <span>Prefer saved copies first before re-downloading</span>
+                </label>
+                <label class="settings-field">
+                    <span>Grid size</span>
+                    <select id="cardDensitySetting" onchange="updateSetting('cardDensity', this.value)">
+                        <option value="compact">Compact</option>
+                        <option value="normal">Normal</option>
+                        <option value="large">Large</option>
+                    </select>
+                </label>
+            </div>
+            <div class="settings-card">
+                <h4>Library</h4>
+                <label class="settings-toggle">
+                    <input type="checkbox" id="showRecentSectionSetting" onchange="updateSetting('showRecentSection', this.checked)">
+                    <span>Show Recently Played section</span>
+                </label>
+                <label class="settings-toggle">
+                    <input type="checkbox" id="showFavoritesSectionSetting" onchange="updateSetting('showFavoritesSection', this.checked)">
+                    <span>Show Favorites section</span>
+                </label>
+                <label class="settings-toggle">
+                    <input type="checkbox" id="showCompatibilityBannerSetting" onchange="updateSetting('showCompatibilityBanner', this.checked)">
+                    <span>Show compatibility banner on the library</span>
+                </label>
+                <button class="settings-action" onclick="clearRecentGames()">🕐 Clear Recently Played</button>
+                <button class="settings-action" onclick="clearFavoriteGames()">💔 Clear All Favorites</button>
+            </div>
+            <div class="settings-card">
+                <h4>Offline Cache</h4>
+                <button class="settings-action" onclick="handleOfflineAction()">📥 Download / Update Offline Games</button>
+                <button class="settings-action" onclick="cacheVisibleGames()">🧰 Cache Games On Screen</button>
+                <button class="settings-action" onclick="checkCorruption()">🔍 Check Cache Health</button>
+                <button class="settings-action" onclick="clearOfflineCache()">🗑️ Clear Offline Cache</button>
+                <div class="settings-meta" id="settingsCacheMeta">No offline data yet.</div>
+            </div>
+            <div class="settings-card">
+                <h4>Quick Fixes</h4>
+                <button class="settings-action" onclick="resetBannerPreference()">🔔 Show Info Banner Again</button>
+                <button class="settings-action" onclick="resetAllSettings()">♻️ Reset Settings to Default</button>
+                <div class="settings-meta">These settings save on this device.</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allGames = [];
+        let currentGame = null;
+        const MAX_RECENT = 5;
+        const CACHE_NAME = 'gn-offline-v1';
+        const SETTINGS_KEY = 'gn_settings_v1';
+        const OFFLINE_META_KEY = 'gn_offline_meta_v1';
+        let offlineCancelled = false;
+        const COVERS_CDN = 'https://cdn.jsdelivr.net/gh/gn-math/covers@main';
+        const GITHUB_OWNER = 'Sirco-web';
+        const GITHUB_REPO_NAME = 'gn';
+        const GITHUB_BRANCH = 'main';
+        const GITHUB_RAW = `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO_NAME}/${GITHUB_BRANCH}`;
+        const GITHUB_CDN = `https://cdn.jsdelivr.net/gh/${GITHUB_OWNER}/${GITHUB_REPO_NAME}@${GITHUB_BRANCH}`;
+        const CORS_PROXIES = [
+            'https://corsify-sirco.timco-store1.workers.dev/?url=',
+            'https://corsproxy.io/?',
+            'https://proxy.cors.sh/'
+        ];
+        const CORS_SH_API_KEY = 'temp_a30a9b528f2f1666e2a2f02c8df8dec7';
+        const DEFAULT_SETTINGS = {
+            defaultLaunchMode: 'same-tab',
+            autoCacheOnPlay: true,
+            preferOfflineCache: true,
+            showCompatibilityBanner: true,
+            showRecentSection: true,
+            showFavoritesSection: true,
+            cardDensity: 'normal'
+        };
+        let coverMap = {};
+        let gameContentCache = {};
+        
+        // Games reported to have issues (multi-part loaders, emulators, etc.)
+        const PROBLEMATIC_GAMES = new Set([
+            "Amanda the Adventurer", "Andys Apple Farm", "Baldis Basics Classic Remastered",
+            "Bendy and the Ink Machine", "Class of 09", "Cooking Mama 3", "Cuphead",
+            "Deltatraveler", "Duck Life 8", "FIFA 10", "FIFA 11", "Fears to Fathom_ Home Alone",
+            "Final Fantasy VII", "Five Nights at Epsteins", "Flappy Bird",
+            "Getting Over It with Bennett Foddy", "Granny 2", "Granny 3", "Kindergarten",
+            "Kindergarten 2", "Kindergarten 3", "Kirby  Soft  Wet", "Kirby Super Star Ultra",
+            "Metal Gear Solid", "Milk Outside A Bag Of Milk Outside A Bag Of Milk",
+            "Nubbys Number Factory", "Oshi Oshi Punch", "Pizza Tower", "Pokemon HeartGold",
+            "Quake III Arena", "REPO", "Raft", "Raldis Crackhouse", "Real Flight Simulator",
+            "Rolling Sky", "Side Effects", "Slender_ The 8 Pages", "Slope", "SpiderDoll",
+            "Steal A Brainrot", "Swordfight", "The Legend of Zelda Majoras Mask",
+            "The Legend of Zelda Ocarina of Time", "The Man In The Window", "They Are Coming",
+            "Tomodachi Collection", "Touhou_ Luminous Strike", "Undertale Yellow", "Yandere Simulator"
+        ]);
+
+// Inject fetch interceptor into HTML
+        function injectFetchInterceptor(html, gamePath) {
+            const proxiesJson = JSON.stringify(CORS_PROXIES);
+            const apiKey = CORS_SH_API_KEY;
+            const encodedGamePath = gamePath.split('/').map(part => encodeURIComponent(part)).join('/');
+            const cdnBaseUrl = `https://cdn.jsdelivr.net/gh/${GITHUB_OWNER}/${GITHUB_REPO_NAME}@${GITHUB_BRANCH}/${encodedGamePath}/`;
+            if (/<head[^>]*>/i.test(html) && !/<base\s/i.test(html)) {
+                html = html.replace(/<head([^>]*)>/i, `<head$1><base href="${cdnBaseUrl}">`);
+            }
+            const interceptor = `
+        <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"><\/script>
+        <script>
+        // Ensure pako is ready before any game code runs
+        const pakoReadyPromise = new Promise((resolve) => {
+            const checkPako = () => {
+                if (typeof pako !== 'undefined') {
+                    console.log('[Iframe] Pako ready');
+                    resolve();
+                } else {
+                    setTimeout(checkPako, 10);
+                }
+            };
+            checkPako();
+        });
+        
+        // Block redirects and malicious navigation
+        try {
+            const originalOpen = window.open;
+            window.open = function(...args) {
+                const url = args[0];
+                if (typeof url === 'string' && (url.includes('bovada') || url.includes('bet') || url.includes('casino') || 
+                    url.includes('gamble') || url.includes('referral') || url.includes('affiliat'))) {
+                    console.warn('[Iframe] Blocked malicious pop-up:', url);
+                    return null;
+                }
+                return originalOpen.apply(this, args);
+            };
+
+            if (window.location && typeof window.location.assign === 'function') {
+                const originalAssign = window.location.assign.bind(window.location);
+                window.location.assign = function(url) {
+                    if (typeof url === 'string' && (url.includes('bovada') || url.includes('bet') || url.includes('casino') ||
+                        url.includes('gamble') || url.includes('referral') || url.includes('affiliat') ||
+                        url.includes('eduplace') || url.includes('breadisgay'))) {
+                        console.warn('[Iframe] Blocked malicious redirect:', url);
+                        return;
+                    }
+                    return originalAssign(url);
+                };
+            }
+
+            if (window.location && typeof window.location.replace === 'function') {
+                const originalReplace = window.location.replace.bind(window.location);
+                window.location.replace = function(url) {
+                    if (typeof url === 'string' && (url.includes('bovada') || url.includes('bet') || url.includes('casino') ||
+                        url.includes('gamble') || url.includes('referral') || url.includes('affiliat') ||
+                        url.includes('eduplace') || url.includes('breadisgay'))) {
+                        console.warn('[Iframe] Blocked malicious redirect:', url);
+                        return;
+                    }
+                    return originalReplace(url);
+                };
+            }
+
+            console.log('[Iframe] Security patches installed');
+        } catch (e) {
+            console.warn('[Iframe] Could not install security patches:', e);
+        }
+        
+        try {
+            (async function() {
+                // Wait for pako to load
+                await pakoReadyPromise;
+                
+                const originalFetch = window.fetch;
+                const gamePath = '${gamePath}';
+                const githubRaw = '${GITHUB_RAW}';
+                const githubCdn = '${cdnBaseUrl}';
+                const corsProxies = ${proxiesJson};
+                const corsShApiKey = '${apiKey}';
+                const githubRawUrl = new URL(githubRaw + '/');
+                const gameBaseUrl = new URL(gamePath.split('/').map(part => encodeURIComponent(part)).join('/') + '/', githubRawUrl);
+                const assetCachePrefix = 'gn_asset_cache:' + gamePath + ':';
+                const textExtensions = new Set([
+                    'html', 'htm', 'js', 'mjs', 'json', 'css', 'txt', 'xml', 'svg',
+                    'atlas', 'fnt', 'plist', 'csv', 'glsl', 'shader', 'frag', 'vert'
+                ]);
+                
+                function isBlockedUrl(url) {
+                    return url.includes('adinplay.com') || url.includes('gameanalytics.com') || url.includes('adsbygoogle') ||
+                        url.includes('breadisgay.eduplace.net') || url.includes('youtube.com') || url.includes('ytimg');
+                }
+
+                function getExtension(url) {
+                    const cleanUrl = url.split('#')[0].split('?')[0];
+                    const parts = cleanUrl.split('/');
+                    const fileName = parts[parts.length - 1] || '';
+                    const segments = fileName.split('.');
+                    if (segments.length <= 1) return '';
+                    let extension = segments.pop().toLowerCase();
+                    if (extension === 'gz' && segments.length) {
+                        extension = segments.pop().toLowerCase();
+                    }
+                    return extension;
+                }
+
+                function isTextAsset(url) {
+                    const extension = getExtension(url);
+                    return textExtensions.has(extension);
+                }
+
+                function decodeBuffer(buffer, url) {
+                    const view = new Uint8Array(buffer);
+                    if (view[0] === 0x1f && view[1] === 0x8b) {
+                        try {
+                            if (isTextAsset(url)) {
+                                return {
+                                    body: pako.inflate(view, { to: 'string' }),
+                                    contentEncoding: 'identity'
+                                };
+                            }
+                            return {
+                                body: pako.inflate(view).buffer,
+                                contentEncoding: 'identity'
+                            };
+                        } catch (e) {
+                            console.error('[Iframe] Decompression failed:', e);
+                            if (isTextAsset(url)) {
+                                return {
+                                    body: new TextDecoder().decode(buffer),
+                                    contentEncoding: 'identity'
+                                };
+                            }
+                            return {
+                                body: buffer,
+                                contentEncoding: null
+                            };
+                        }
+                    }
+                    return {
+                        body: isTextAsset(url) ? new TextDecoder().decode(buffer) : buffer,
+                        contentEncoding: null
+                    };
+                }
+
+                function buildResponse(resp, body, contentEncoding) {
+                    const headers = new Headers(resp.headers);
+                    if (contentEncoding) headers.delete('content-encoding');
+                    headers.delete('content-length');
+                    return new Response(body, {
+                        status: resp.status,
+                        statusText: resp.statusText,
+                        headers
+                    });
+                }
+
+                function headersToObject(headers) {
+                    const result = {};
+                    headers.forEach(function(value, key) {
+                        result[key] = value;
+                    });
+                    return result;
+                }
+
+                function objectToHeaders(headersObject) {
+                    const headers = new Headers();
+                    Object.keys(headersObject || {}).forEach(function(key) {
+                        headers.set(key, headersObject[key]);
+                    });
+                    return headers;
+                }
+
+                function toBase64(buffer) {
+                    const bytes = new Uint8Array(buffer);
+                    let binary = '';
+                    const chunkSize = 0x8000;
+                    for (let i = 0; i < bytes.length; i += chunkSize) {
+                        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+                    }
+                    return btoa(binary);
+                }
+
+                function fromBase64(base64) {
+                    const binary = atob(base64);
+                    const bytes = new Uint8Array(binary.length);
+                    for (let i = 0; i < binary.length; i++) {
+                        bytes[i] = binary.charCodeAt(i);
+                    }
+                    return bytes.buffer;
+                }
+
+                function getCacheKey(url) {
+                    return assetCachePrefix + url;
+                }
+
+                function readCachedResponse(url) {
+                    try {
+                        const raw = sessionStorage.getItem(getCacheKey(url));
+                        if (!raw) return null;
+                        const cached = JSON.parse(raw);
+                        const headers = objectToHeaders(cached.headers);
+                        const body = cached.kind === 'text' ? cached.body : fromBase64(cached.body);
+                        return new Response(body, {
+                            status: cached.status || 200,
+                            statusText: cached.statusText || 'OK',
+                            headers
+                        });
+                    } catch (e) {
+                        console.warn('[Iframe] Failed to read cache for', url, e);
+                        return null;
+                    }
+                }
+
+                async function writeCachedResponse(url, response) {
+                    try {
+                        const cloned = response.clone();
+                        const contentType = cloned.headers.get('content-type') || '';
+                        const isText = isTextAsset(url) || contentType.startsWith('text/') || contentType.includes('json') || contentType.includes('javascript');
+                        const payload = {
+                            status: cloned.status,
+                            statusText: cloned.statusText,
+                            headers: headersToObject(cloned.headers),
+                            kind: isText ? 'text' : 'binary',
+                            body: isText ? await cloned.text() : toBase64(await cloned.arrayBuffer())
+                        };
+                        sessionStorage.setItem(getCacheKey(url), JSON.stringify(payload));
+                    } catch (e) {
+                        if (e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+                            console.warn('[Iframe] sessionStorage full, skipping cache for', url);
+                        } else {
+                            console.warn('[Iframe] Failed to cache', url, e);
+                        }
+                    }
+                }
+
+                function extractRequestUrl(resource) {
+                    if (typeof resource === 'string') return resource;
+                    if (resource && typeof resource.url === 'string') return resource.url;
+                    return String(resource || '');
+                }
+
+                function hasExplicitScheme(url) {
+                    const value = (url || '').trim().toLowerCase();
+                    if (!value) return false;
+                    const colonIndex = value.indexOf(':');
+                    if (colonIndex <= 0) return false;
+                    const schemeCandidate = value.slice(0, colonIndex);
+                    return /^[a-z0-9+.-]+$/.test(schemeCandidate);
+                }
+
+                function resolveGitHubUrl(resourceUrl) {
+                    try {
+                        return new URL(resourceUrl, gameBaseUrl);
+                    } catch (e) {
+                        console.warn('[Iframe] Could not resolve URL:', resourceUrl, e);
+                        return null;
+                    }
+                }
+
+                function resolveDocumentUrl(resourceUrl) {
+                    try {
+                        return new URL(resourceUrl, document.baseURI || gameBaseUrl.toString());
+                    } catch (e) {
+                        console.warn('[Iframe] Could not resolve document URL:', resourceUrl, e);
+                        return null;
+                    }
+                }
+
+                function buildCandidateUrls(resolvedUrl) {
+                    const candidates = [resolvedUrl.toString()];
+                    const pathName = resolvedUrl.pathname;
+                    const lastSegment = pathName.split('/').pop() || '';
+                    if (!lastSegment.includes('.')) {
+                        return candidates;
+                    }
+                    if (pathName.endsWith('.gz')) {
+                        candidates.push(resolvedUrl.toString().slice(0, -3));
+                    } else if (!pathName.endsWith('/')) {
+                        candidates.unshift(resolvedUrl.toString() + '.gz');
+                    }
+                    return candidates.filter(function(candidate, index) {
+                        return candidates.indexOf(candidate) === index;
+                    });
+                }
+
+                function normalizeResolvedUrl(resolvedUrl) {
+                    const normalizedUrl = new URL(resolvedUrl.toString());
+                    const gameBasePath = gameBaseUrl.pathname;
+
+                    if (normalizedUrl.pathname.startsWith(gameBasePath + 'undefined/')) {
+                        normalizedUrl.pathname = gameBasePath + normalizedUrl.pathname.slice((gameBasePath + 'undefined/').length);
+                    }
+
+                    while (normalizedUrl.pathname.includes('/undefined/')) {
+                        normalizedUrl.pathname = normalizedUrl.pathname.replace('/undefined/', '/');
+                    }
+
+                    if (normalizedUrl.pathname.endsWith('/undefined')) {
+                        normalizedUrl.pathname = normalizedUrl.pathname.slice(0, -('/undefined'.length));
+                    }
+                    return normalizedUrl;
+                }
+
+                function toCdnUrl(resolvedUrl) {
+                    if (resolvedUrl.origin !== githubRawUrl.origin || !resolvedUrl.pathname.startsWith(githubRawUrl.pathname)) {
+                        return resolvedUrl.toString();
+                    }
+                    const relativePath = resolvedUrl.pathname.slice(githubRawUrl.pathname.length);
+                    return githubCdn + relativePath;
+                }
+
+                function isRelativeAssetUrl(url) {
+                    const value = (url || '').trim().toLowerCase();
+                    if (!value) return false;
+                    if (value.startsWith('#')) return false;
+                    if (value.startsWith('//')) return false;
+                    if (value.startsWith('data:')) return false;
+                    if (value.startsWith('blob:')) return false;
+                    if (value.startsWith('javascript:')) return false;
+                    if (value.startsWith('about:')) return false;
+                    if (value.includes(':')) {
+                        const schemeCandidate = value.slice(0, value.indexOf(':'));
+                        if (/^[a-z0-9+.-]+$/.test(schemeCandidate)) {
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+
+                function rewriteDomAssetUrl(url) {
+                    if (!url || isBlockedUrl(url) || !isRelativeAssetUrl(url)) {
+                        return url;
+                    }
+
+                    const resolvedUrl = resolveGitHubUrl(url);
+                    if (!resolvedUrl) {
+                        return url;
+                    }
+
+                    return toCdnUrl(normalizeResolvedUrl(resolvedUrl));
+                }
+
+                function buildFetchTargets(resourceUrl) {
+                    const targets = [];
+                    const trimmedUrl = (resourceUrl || '').trim();
+
+                    if (!trimmedUrl) {
+                        return targets;
+                    }
+
+                    function addTarget(url) {
+                        if (url && !targets.includes(url)) {
+                            targets.push(url);
+                        }
+                    }
+
+                    if (hasExplicitScheme(trimmedUrl)) {
+                        try {
+                            const explicitUrl = new URL(trimmedUrl);
+                            while (explicitUrl.pathname.includes('/undefined/')) {
+                                explicitUrl.pathname = explicitUrl.pathname.replace('/undefined/', '/');
+                            }
+                            if (explicitUrl.pathname.endsWith('/undefined')) {
+                                explicitUrl.pathname = explicitUrl.pathname.slice(0, -('/undefined'.length));
+                            }
+                            addTarget(explicitUrl.toString());
+                        } catch (e) {
+                            addTarget(trimmedUrl);
+                        }
+                    }
+
+                    const documentUrl = resolveDocumentUrl(trimmedUrl);
+                    if (documentUrl) {
+                        addTarget(normalizeResolvedUrl(documentUrl).toString());
+                    }
+
+                    const resolvedUrl = resolveGitHubUrl(trimmedUrl);
+                    if (resolvedUrl) {
+                        addTarget(normalizeResolvedUrl(resolvedUrl).toString());
+                    }
+
+                    return targets;
+                }
+
+                const originalSetAttribute = Element.prototype.setAttribute;
+                Element.prototype.setAttribute = function(name, value) {
+                    if ((name === 'src' || name === 'href' || name === 'poster') && typeof value === 'string') {
+                        value = rewriteDomAssetUrl(value);
+                    }
+                    return originalSetAttribute.call(this, name, value);
+                };
+
+                const originalXHROpen = XMLHttpRequest.prototype.open;
+                XMLHttpRequest.prototype.open = function(method, url) {
+                    const rewrittenUrl = typeof url === 'string' ? rewriteDomAssetUrl(url) : url;
+                    return originalXHROpen.apply(this, [method, rewrittenUrl].concat([].slice.call(arguments, 2)));
+                };
+                
+                async function fetchWithProxy(url, init, originalUrl) {
+                    if (isBlockedUrl(url) || isBlockedUrl(originalUrl || '')) {
+                        return new Response(null, { status: 204 });
+                    }
+                    
+                    const requestInit = init ? { ...init } : {};
+                    const baseTargets = buildFetchTargets(originalUrl || url);
+
+                    for (const baseTarget of baseTargets) {
+                        for (const candidateUrl of buildCandidateUrls(new URL(baseTarget))) {
+                            const cachedResponse = readCachedResponse(candidateUrl);
+                            if (cachedResponse) {
+                                return cachedResponse;
+                            }
+
+                            for (let proxy of corsProxies) {
+                                try {
+                                    let proxyUrl;
+                                    const fetchOptions = { ...requestInit };
+                                    const headers = new Headers(fetchOptions.headers || {});
+
+                                    if (proxy.includes('corsify') || proxy.includes('timco-store1')) {
+                                        proxyUrl = proxy + encodeURIComponent(candidateUrl);
+                                    } else if (proxy.includes('corsproxy.io')) {
+                                        proxyUrl = proxy + candidateUrl;
+                                    } else if (proxy.includes('proxy.cors.sh')) {
+                                        proxyUrl = proxy + candidateUrl;
+                                        headers.set('x-cors-api-key', corsShApiKey);
+                                    } else {
+                                        proxyUrl = proxy + encodeURIComponent(candidateUrl);
+                                    }
+
+                                    fetchOptions.headers = headers;
+
+                                    const resp = await originalFetch(proxyUrl, fetchOptions);
+                                    if (resp.ok) {
+                                        const buffer = await resp.arrayBuffer();
+                                        const decoded = decodeBuffer(buffer, candidateUrl);
+                                        const finalResponse = buildResponse(resp, decoded.body, decoded.contentEncoding);
+                                        writeCachedResponse(candidateUrl, finalResponse.clone());
+                                        return finalResponse;
+                                    }
+                                    if (resp.status !== 404) {
+                                        console.warn('[Iframe] Proxy returned', resp.status, 'for', candidateUrl);
+                                    }
+                                } catch (e) {
+                                    console.warn('[Iframe] Proxy failed for', candidateUrl, e);
+                                }
+                            }
+                        }
+                    }
+
+                    return new Response(JSON.stringify({}), {
+                        status: 200,
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                }
+                
+                window.fetch = function(...args) {
+                    const resource = args[0];
+                    const init = args[1];
+                    const resourceUrl = extractRequestUrl(resource);
+
+                    if (isBlockedUrl(resourceUrl)) {
+                        return Promise.resolve(new Response(null, { status: 204 }));
+                    }
+
+                    if (/^(blob:|data:|javascript:|about:)/i.test(resourceUrl)) {
+                        return originalFetch.apply(this, args).catch(() => new Response('', { status: 204 }));
+                    }
+
+                    const documentResolvedUrl = resolveDocumentUrl(resourceUrl);
+                    if (documentResolvedUrl && !hasExplicitScheme(resourceUrl)) {
+                        return fetchWithProxy(documentResolvedUrl.toString(), init, resourceUrl);
+                    }
+
+                    const resolvedUrl = resolveGitHubUrl(resourceUrl);
+                    if (resolvedUrl) {
+                        const isGitHubAsset = resolvedUrl.origin === githubRawUrl.origin &&
+                            resolvedUrl.pathname.startsWith(githubRawUrl.pathname);
+
+                        if (isGitHubAsset) {
+                            return fetchWithProxy(resolvedUrl.toString(), init, resourceUrl);
+                        }
+                    }
+
+                    if (hasExplicitScheme(resourceUrl)) {
+                        return fetchWithProxy(resourceUrl, init, resourceUrl);
+                    }
+                    
+                    return originalFetch.apply(this, args).catch(err => {
+                        return new Response('', { status: 204 });
+                    });
+                };
+                console.log('[Iframe] Fetch interceptor installed');
+            })();
+        } catch (err) {
+            console.error('[Iframe] Error in fetch interceptor:', err);
+        }
+        <\/script>
+            `;
+            return interceptor + html;
+        }
+
+        // Fetch from GitHub raw with CORS proxy (with fallback proxies)
+        async function fetchFromGitHub(path) {
+            // Replace spaces in path with %20 for GitHub
+            const encodedPath = path.split('/').map(part => encodeURIComponent(part)).join('/');
+            const rawUrl = `${GITHUB_RAW}/${encodedPath}`;
+            const sessionCacheKey = `gn_root_cache:${rawUrl}`;
+            
+            console.log(`📥 Fetching: ${rawUrl}`);
+
+            try {
+                const cached = sessionStorage.getItem(sessionCacheKey);
+                if (cached !== null) {
+                    console.log(`⚡ Using session cache for ${path}`);
+                    return cached;
+                }
+            } catch (e) {
+                console.warn(`Session cache read failed for ${path}:`, e);
+            }
+            
+            for (let proxy of CORS_PROXIES) {
+                try {
+                    let proxyUrl;
+                    let fetchOptions = {};
+                    
+                    // Format URL based on proxy type
+                    if (proxy.includes('corsify') || proxy.includes('timco-store1')) {
+                        // Cloudflare format: ?url=ENCODED
+                        proxyUrl = proxy + encodeURIComponent(rawUrl);
+                        console.log(`🔄 Trying Cloudflare worker...`);
+                    } else if (proxy.includes('corsproxy.io')) {
+                        // corsproxy.io format: ?URL_NOT_ENCODED
+                        proxyUrl = proxy + rawUrl;
+                        console.log(`🔄 Trying corsproxy.io...`);
+                    } else if (proxy.includes('proxy.cors.sh')) {
+                        // cors.sh format: /URL_NOT_ENCODED + API key header
+                        proxyUrl = proxy + rawUrl;
+                        fetchOptions.headers = {
+                            'x-cors-api-key': CORS_SH_API_KEY
+                        };
+                        console.log(`🔄 Trying cors.sh...`);
+                    } else {
+                        // Generic fallback: append encoded URL
+                        proxyUrl = proxy + encodeURIComponent(rawUrl);
+                    }
+                    
+                    console.log(`   URL: ${proxyUrl.substring(0, 80)}...`);
+                    const response = await fetch(proxyUrl, fetchOptions);
+                    console.log(`   Status: ${response.status}`);
+                    
+                    if (response.ok) {
+                        console.log(`✅ Success! Getting content...`);
+                        let data = await response.arrayBuffer();
+                        
+                        // Check if it's gzipped (magic bytes 1f 8b)
+                        const view = new Uint8Array(data);
+                        console.log(`   Buffer size: ${data.byteLength} bytes`);
+                        console.log(`   First 10 bytes (hex): ${Array.from(view.slice(0, 10)).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
+                        
+                        // Check for UTF-8 corruption (0xef 0xbf 0xbd is replacement character)
+                        if (view[0] === 0x1f && view[1] === 0xef) {
+                            console.warn(`   ⚠️  Detected UTF-8 corruption in binary data (0xef 0xbf 0xbd). Proxy may have corrupted the data.`);
+                            console.log(`   Falling back to next proxy...`);
+                            throw new Error('Binary data corrupted by proxy');
+                        }
+                        
+                        const isGzipped = view[0] === 0x1f && view[1] === 0x8b;
+                        console.log(`   Magic bytes check: 0x${view[0].toString(16)} 0x${view[1].toString(16)} -> ${isGzipped ? 'GZIPPED' : 'NOT GZIPPED'}`);
+                        
+                        if (isGzipped) {
+                            console.log(`   ✓ Detected gzip format, decompressing with pako...`);
+                            try {
+                                if (typeof pako !== 'undefined') {
+                                    const decompressed = pako.inflate(view, { to: 'string' });
+                                    console.log(`   ✓ Pako decompressed: ${decompressed.length} chars`);
+                                    try {
+                                        sessionStorage.setItem(sessionCacheKey, decompressed);
+                                    } catch (e) {
+                                        console.warn(`   Session cache write failed for ${path}: ${e.message}`);
+                                    }
+                                    return decompressed;
+                                } else {
+                                    console.warn(`   ⚠️  Pako not loaded yet, deferring to async`);
+                                    // Wait a bit for pako to load
+                                    await new Promise(r => setTimeout(r, 100));
+                                    if (typeof pako !== 'undefined') {
+                                        const decompressed = pako.inflate(view, { to: 'string' });
+                                        console.log(`   ✓ Pako decompressed (after wait): ${decompressed.length} chars`);
+                                        try {
+                                            sessionStorage.setItem(sessionCacheKey, decompressed);
+                                        } catch (e) {
+                                            console.warn(`   Session cache write failed for ${path}: ${e.message}`);
+                                        }
+                                        return decompressed;
+                                    }
+                                    throw new Error('Pako library not available');
+                                }
+                            } catch (e) {
+                                console.error(`   ❌ Pako failed: ${e.message}`);
+                                throw e;
+                            }
+                        } else {
+                            console.log(`   Not gzipped, using as-is`);
+                            const text = new TextDecoder().decode(data);
+                            try {
+                                sessionStorage.setItem(sessionCacheKey, text);
+                            } catch (e) {
+                                console.warn(`   Session cache write failed for ${path}: ${e.message}`);
+                            }
+                            return text;
+                        }
+                    }
+                    
+                    if (response.status === 404) {
+                        console.log(`❌ 404 Not Found - file might not exist`);
+                    } else if (response.status === 403) {
+                        console.log(`❌ 403 Forbidden`);
+                    } else {
+                        console.log(`❌ Error: ${response.statusText}`);
+                    }
+                } catch (e) {
+                    console.warn(`❌ Proxy error: ${e.message}`);
+                    continue;
+                }
+            }
+            throw new Error('All CORS proxies failed - could not fetch from GitHub');
+        }
+
+        // Decompress gzipped data
+        async function decompressGzip(buffer) {
+            try {
+                // Try DecompressionStream first if available
+                if ('DecompressionStream' in window) {
+                    console.log(`   Trying DecompressionStream...`);
+                    const stream = new ReadableStream({
+                        start(controller) {
+                            controller.enqueue(new Uint8Array(buffer));
+                            controller.close();
+                        }
+                    });
+                    
+                    const decompressed = stream.pipeThrough(new DecompressionStream('gzip'));
+                    const reader = decompressed.getReader();
+                    let result = new Uint8Array();
+                    
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        const combined = new Uint8Array(result.length + value.length);
+                        combined.set(result);
+                        combined.set(value, result.length);
+                        result = combined;
+                    }
+                    
+                    return new TextDecoder().decode(result);
+                } else {
+                    throw new Error('DecompressionStream not available');
+                }
+            } catch (e) {
+                console.error(`   DecompressionStream error: ${e.message}`);
+                // Last resort: try pako
+                if (typeof pako !== 'undefined') {
+                    console.log(`   Trying pako as last resort...`);
+                    const decompressed = pako.inflate(new Uint8Array(buffer), { to: 'string' });
+                    return decompressed;
+                }
+                throw new Error('No decompression available');
+            }
+        }
+
+        // Initialize
+        async function registerOfflineWorker() {
+            if (!('serviceWorker' in navigator)) return null;
+            try {
+                const registration = await navigator.serviceWorker.register('./sw.js');
+                await navigator.serviceWorker.ready;
+                return registration;
+            } catch (error) {
+                console.warn('Service worker registration failed:', error);
+                return null;
+            }
+        }
+
+        async function initGames() {
+            try {
+                document.getElementById('loading').classList.add('visible');
+                
+                // Fetch games.json from GitHub raw
+                const gamesJson = await fetchFromGitHub('games.json');
+                const games = JSON.parse(gamesJson);
+                allGames = games.filter(g => !g.id.startsWith('-') && !g.name.includes('[!]'));
+
+                // Load cover map (name → numeric id) from zones.json
+                try {
+                    const zr = await fetch('https://cdn.jsdelivr.net/gh/gn-math/assets@main/zones.json');
+                    if (zr.ok) {
+                        const zones = await zr.json();
+                        zones.forEach(z => { if (z.name && z.id) coverMap[z.name] = z.id; });
+                    }
+                } catch(e) { console.warn('Cover map unavailable:', e); }
+
+                renderGames();
+                renderRecent();
+                renderFavorites();
+                document.getElementById('loading').classList.remove('visible');
+                applySettingsToUI();
+                updateOfflineButton();
+            } catch (error) {
+                console.error('Error loading games:', error);
+                document.getElementById('loading').textContent = '❌ Failed to load games.';
+            }
+        }
+
+        function renderGames() {
+            const container = document.getElementById('gamesContainer');
+            container.innerHTML = '';
+            allGames.forEach(game => {
+                container.appendChild(createCard(game));
+            });
+        }
+
+        function renderRecent() {
+            const recent = getRecent();
+            const container = document.getElementById('recentContainer');
+            container.innerHTML = '';
+            
+            if (recent.length === 0) {
+                container.innerHTML = '<p style="color:#999">No games played yet</p>';
+                return;
+            }
+
+            recent.forEach(gameId => {
+                const game = allGames.find(g => g.id === gameId);
+                if (game) container.appendChild(createCard(game));
+            });
+        }
+
+        function renderFavorites() {
+            const favs = getFavorites();
+            const container = document.getElementById('favContainer');
+            container.innerHTML = '';
+            
+            if (favs.length === 0) {
+                container.innerHTML = '<p style="color:#999">No favorites yet</p>';
+                return;
+            }
+
+            favs.forEach(gameId => {
+                const game = allGames.find(g => g.id === gameId);
+                if (game) container.appendChild(createCard(game));
+            });
+        }
+
+        function createCard(game) {
+            const card = document.createElement('div');
+            card.className = 'card';
+
+            // Use numeric zone ID for cover, or game.id if already numeric
+            const numId = coverMap[game.name] || (/^\d+$/.test(game.id) ? game.id : null);
+            if (numId !== null) {
+                card.innerHTML = `
+                    <img class="card-cover" src="${COVERS_CDN}/${numId}.png" alt="" loading="lazy"
+                         onerror="this.outerHTML='<div class=card-icon>🎯</div>'">
+                    <div class="card-name">${game.name}</div>
+                `;
+            } else {
+                card.innerHTML = `
+                    <div class="card-icon">🎯</div>
+                    <div class="card-name">${game.name}</div>
+                `;
+            }
+            card.onclick = () => playGame(game);
+            return card;
+        }
+
+        function getFavorites() {
+            try {
+                return JSON.parse(localStorage.getItem('gn_favorites') || '[]');
+            } catch {
+                return [];
+            }
+        }
+
+        function addFavorite(gameId) {
+            const favs = getFavorites();
+            if (!favs.includes(gameId)) {
+                favs.push(gameId);
+                localStorage.setItem('gn_favorites', JSON.stringify(favs));
+                renderFavorites();
+            }
+        }
+
+        function removeFavorite(gameId) {
+            let favs = getFavorites();
+            favs = favs.filter(id => id !== gameId);
+            localStorage.setItem('gn_favorites', JSON.stringify(favs));
+            renderFavorites();
+        }
+
+        function getRecent() {
+            try {
+                return JSON.parse(localStorage.getItem('gn_lastPlayed') || '[]');
+            } catch {
+                return [];
+            }
+        }
+
+        function addRecent(gameId) {
+            let recent = getRecent();
+            recent = recent.filter(id => id !== gameId);
+            recent.unshift(gameId);
+            recent = recent.slice(0, MAX_RECENT);
+            localStorage.setItem('gn_lastPlayed', JSON.stringify(recent));
+            renderRecent();
+        }
+
+        function getSettings() {
+            try {
+                return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') };
+            } catch {
+                return { ...DEFAULT_SETTINGS };
+            }
+        }
+
+        function setSettings(nextSettings) {
+            const merged = { ...DEFAULT_SETTINGS, ...nextSettings };
+            localStorage.setItem(SETTINGS_KEY, JSON.stringify(merged));
+            applySettingsToUI();
+            return merged;
+        }
+
+        function updateSetting(key, value) {
+            const settings = getSettings();
+            settings[key] = value;
+            setSettings(settings);
+        }
+
+        function dismissInfoBanner() {
+            localStorage.setItem('gn_banner_dismissed', '1');
+            updateInfoBannerVisibility();
+        }
+
+        function resetBannerPreference() {
+            localStorage.removeItem('gn_banner_dismissed');
+            updateSetting('showCompatibilityBanner', true);
+            toggleSettingsPanel(false);
+        }
+
+        function updateInfoBannerVisibility() {
+            const banner = document.getElementById('infoBanner');
+            if (!banner) return;
+            const settings = getSettings();
+            const dismissed = localStorage.getItem('gn_banner_dismissed') === '1';
+            banner.style.display = settings.showCompatibilityBanner && !dismissed ? '' : 'none';
+        }
+
+        function getOfflineMeta() {
+            try {
+                return JSON.parse(localStorage.getItem(OFFLINE_META_KEY) || '{}');
+            } catch {
+                return {};
+            }
+        }
+
+        function setOfflineMeta(meta) {
+            localStorage.setItem(OFFLINE_META_KEY, JSON.stringify(meta));
+            updateSettingsCacheMeta();
+        }
+
+        function markGameCached(game, info = {}) {
+            const meta = getOfflineMeta();
+            const previous = meta[game.id] || {};
+            const variants = Array.from(new Set([...(previous.variants || []), ...(info.variants || [])]));
+            meta[game.id] = {
+                ...previous,
+                ...info,
+                id: game.id,
+                name: game.name,
+                folder: game.folder,
+                variants,
+                cachedAt: Date.now()
+            };
+            setOfflineMeta(meta);
+            gameContentCache[game.id] = meta[game.id];
+        }
+
+        function removeCachedGameMeta(gameId) {
+            const meta = getOfflineMeta();
+            delete meta[gameId];
+            setOfflineMeta(meta);
+            delete gameContentCache[gameId];
+        }
+
+        function isGameMarkedCached(gameId) {
+            const meta = getOfflineMeta();
+            return Boolean(meta[gameId]?.variants?.length);
+        }
+
+        function getGameDocumentCacheUrl(gameId, variant = 'standalone') {
+            return `${location.origin}/__code-mini-cache__/games/${encodeURIComponent(gameId)}/${variant}.html`;
+        }
+
+        async function readCachedGameDocument(gameId, variant = 'standalone') {
+            if (!('caches' in window)) return null;
+            const cache = await caches.open(CACHE_NAME);
+            const response = await cache.match(getGameDocumentCacheUrl(gameId, variant));
+            return response ? response.text() : null;
+        }
+
+        async function writeCachedGameDocument(gameId, variant, html) {
+            if (!('caches' in window)) return;
+            const cache = await caches.open(CACHE_NAME);
+            await cache.put(
+                getGameDocumentCacheUrl(gameId, variant),
+                new Response(html, {
+                    headers: {
+                        'content-type': 'text/html; charset=utf-8',
+                        'x-code-mini-variant': variant
+                    }
+                })
+            );
+        }
+
+        function isBlockedAssetUrl(url) {
+            return [
+                'motorsnag.com',
+                'breadisgay.eduplace.net',
+                'googletagmanager.com',
+                'doubleclick.net'
+            ].some((host) => url.includes(host));
+        }
+
+        function isCacheableAssetUrl(url) {
+            if (!url) return false;
+            const value = String(url).trim();
+            if (!value) return false;
+            if (/^(data:|blob:|javascript:|about:|mailto:|tel:)/i.test(value)) return false;
+            return !isBlockedAssetUrl(value);
+        }
+
+        function extractAssetUrls(html, gameUrl) {
+            const prepared = ensureBaseTag(html, gameUrl);
+            const doc = new DOMParser().parseFromString(prepared, 'text/html');
+            const assets = new Set();
+            const selectors = [
+                ['script[src]', 'src'],
+                ['link[href]', 'href'],
+                ['img[src]', 'src'],
+                ['audio[src]', 'src'],
+                ['video[src]', 'src'],
+                ['source[src]', 'src'],
+                ['iframe[src]', 'src']
+            ];
+
+            selectors.forEach(([selector, attr]) => {
+                doc.querySelectorAll(selector).forEach((node) => {
+                    const raw = node.getAttribute(attr);
+                    if (!isCacheableAssetUrl(raw)) return;
+                    try {
+                        assets.add(new URL(raw, gameUrl).toString());
+                    } catch {}
+                });
+            });
+
+            return Array.from(assets);
+        }
+
+        async function prefetchAssetUrls(assetUrls, progressCallback) {
+            if (!('caches' in window) || assetUrls.length === 0) {
+                return { total: assetUrls.length, cached: 0, failed: 0 };
+            }
+
+            const cache = await caches.open(CACHE_NAME);
+            let cached = 0;
+            let failed = 0;
+
+            for (let index = 0; index < assetUrls.length; index += 1) {
+                if (offlineCancelled) break;
+
+                const url = assetUrls[index];
+                const request = new Request(url, {
+                    mode: url.startsWith(location.origin) ? 'same-origin' : 'no-cors',
+                    credentials: 'omit'
+                });
+
+                try {
+                    const existing = await cache.match(request);
+                    if (existing) {
+                        cached += 1;
+                    } else {
+                        const response = await fetch(request);
+                        if (response && (response.ok || response.type === 'opaque')) {
+                            await cache.put(request, response.clone());
+                            cached += 1;
+                        } else {
+                            failed += 1;
+                        }
+                    }
+                } catch (error) {
+                    failed += 1;
+                }
+
+                if (typeof progressCallback === 'function') {
+                    progressCallback({
+                        index: index + 1,
+                        total: assetUrls.length,
+                        url,
+                        cached,
+                        failed
+                    });
+                }
+            }
+
+            return { total: assetUrls.length, cached, failed };
+        }
+
+        async function cacheGameForOffline(game, options = {}) {
+            const {
+                variant = 'standalone',
+                preparedHtml = null,
+                prefetchAssets = true,
+                forceRefresh = false,
+                progressCallback = null
+            } = options;
+
+            const gameUrl = getGameUrl(game);
+            let html = preparedHtml;
+            let source = 'network';
+
+            if (!html && !forceRefresh) {
+                html = await readCachedGameDocument(game.id, variant);
+                if (html) {
+                    source = 'cache';
+                }
+            }
+
+            if (!html) {
+                const response = await fetch(`${gameUrl}?t=${Date.now()}`, { cache: 'no-store' });
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch game HTML: ${response.status}`);
+                }
+                const rawHtml = await response.text();
+                html = variant === 'viewer'
+                    ? prepareGameHtml(rawHtml, gameUrl)
+                    : prepareStandaloneHtml(rawHtml, gameUrl, game);
+                source = 'network';
+            }
+
+            await writeCachedGameDocument(game.id, variant, html);
+            const assetUrls = prefetchAssets ? extractAssetUrls(html, gameUrl) : [];
+            const assetStats = prefetchAssets
+                ? await prefetchAssetUrls(assetUrls, progressCallback)
+                : { total: 0, cached: 0, failed: 0 };
+
+            markGameCached(game, {
+                variants: [variant],
+                assetCount: assetUrls.length,
+                assetCachedCount: assetStats.cached,
+                assetFailedCount: assetStats.failed,
+                lastSource: source
+            });
+
+            return { html, gameUrl, source, assetUrls, assetStats };
+        }
+
+        async function getPreparedLaunchHtml(game, variant = 'standalone') {
+            const settings = getSettings();
+            const gameUrl = getGameUrl(game);
+
+            if (settings.preferOfflineCache) {
+                const cached = await readCachedGameDocument(game.id, variant);
+                if (cached) {
+                    return { html: cached, gameUrl, source: 'cache' };
+                }
+            }
+
+            const response = await fetch(`${gameUrl}?t=${Date.now()}`, { cache: 'no-store' });
+            if (!response.ok) {
+                throw new Error(`Failed to fetch game HTML: ${response.status}`);
+            }
+
+            const rawHtml = await response.text();
+            const html = variant === 'viewer'
+                ? prepareGameHtml(rawHtml, gameUrl)
+                : prepareStandaloneHtml(rawHtml, gameUrl, game);
+
+            if (settings.autoCacheOnPlay) {
+                await cacheGameForOffline(game, {
+                    variant,
+                    preparedHtml: html,
+                    prefetchAssets: true
+                });
+            }
+
+            return { html, gameUrl, source: 'network' };
+        }
+
+        function updateSettingsCacheMeta() {
+            const metaEl = document.getElementById('settingsCacheMeta');
+            if (!metaEl) return;
+            const meta = getOfflineMeta();
+            const cachedCount = Object.values(meta).filter((entry) => entry?.variants?.length).length;
+            const total = allGames.length || 0;
+            metaEl.textContent = cachedCount === 0
+                ? 'No offline data yet.'
+                : `${cachedCount}/${total || cachedCount} games cached on this device.`;
+        }
+
+        function applyCardDensity(value) {
+            const widths = {
+                compact: '130px',
+                normal: '150px',
+                large: '190px'
+            };
+            document.documentElement.style.setProperty('--card-min-width', widths[value] || widths.normal);
+        }
+
+        function applySettingsToUI() {
+            const settings = getSettings();
+            const recentSection = document.getElementById('recentSection');
+            const favoritesSection = document.getElementById('favoritesSection');
+
+            const setValue = (id, value) => {
+                const element = document.getElementById(id);
+                if (element) element.value = value;
+            };
+
+            const setChecked = (id, value) => {
+                const element = document.getElementById(id);
+                if (element) element.checked = Boolean(value);
+            };
+
+            setValue('defaultLaunchModeSetting', settings.defaultLaunchMode);
+            setChecked('autoCacheOnPlaySetting', settings.autoCacheOnPlay);
+            setChecked('preferOfflineCacheSetting', settings.preferOfflineCache);
+            setValue('cardDensitySetting', settings.cardDensity);
+            setChecked('showRecentSectionSetting', settings.showRecentSection);
+            setChecked('showFavoritesSectionSetting', settings.showFavoritesSection);
+            setChecked('showCompatibilityBannerSetting', settings.showCompatibilityBanner);
+
+            if (recentSection) recentSection.style.display = settings.showRecentSection ? '' : 'none';
+            if (favoritesSection) favoritesSection.style.display = settings.showFavoritesSection ? '' : 'none';
+
+            applyCardDensity(settings.cardDensity);
+            updateInfoBannerVisibility();
+            updateSettingsCacheMeta();
+        }
+
+        async function cacheVisibleGames() {
+            const query = document.getElementById('searchInput')?.value?.trim().toLowerCase() || '';
+            const visibleGames = query
+                ? allGames.filter((game) => game.name.toLowerCase().includes(query))
+                : allGames.slice(0, 24);
+
+            if (visibleGames.length === 0) {
+                alert('No visible games to cache right now.');
+                return;
+            }
+
+            offlineCancelled = false;
+            const status = document.getElementById('offlineStatus');
+            status.textContent = `Caching ${visibleGames.length} visible games...`;
+
+            for (let index = 0; index < visibleGames.length; index += 1) {
+                const game = visibleGames[index];
+                if (offlineCancelled) break;
+                await cacheGameForOffline(game, { variant: 'standalone', prefetchAssets: true });
+                status.textContent = `Caching visible games: ${index + 1}/${visibleGames.length}`;
+            }
+
+            status.textContent = `Cached ${visibleGames.length} visible games.`;
+            await updateOfflineButton();
+        }
+
+        function resetAllSettings() {
+            if (!confirm('Reset all Code Mini settings back to default?')) return;
+            localStorage.removeItem(SETTINGS_KEY);
+            localStorage.removeItem('gn_banner_dismissed');
+            applySettingsToUI();
+            toggleSettingsPanel(false);
+        }
+
+        // Game Viewer
+        async function playGame(game) {
+            currentGame = game;
+            addRecent(game.id);
+            const settings = getSettings();
+
+            if (settings.defaultLaunchMode === 'viewer') {
+                loadGameSafe(game);
+                return;
+            }
+
+            if (settings.defaultLaunchMode === 'new-tab') {
+                openInNewTab(game);
+                return;
+            }
+
+            openInSameTab(game);
+        }
+        
+        function showWarningModal(game) {
+            const warningHtml = `
+                <div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:2000;" id="warningOverlay" onclick="if(event.target.id==='warningOverlay') closeWarning()">
+                    <div style="background:white;padding:40px;border-radius:12px;max-width:400px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,0.3);">
+                        <div style="font-size:48px;margin-bottom:20px;">⚠️</div>
+                        <h2 style="margin:0 0 15px 0;color:#333;font-size:22px;">${game.name}</h2>
+                        <p style="margin:0 0 25px 0;color:#666;font-size:15px;line-height:1.5;">This game has been reported by users to not work properly (black screen, loading issues, or crashes).</p>
+                        <p style="margin:0 0 30px 0;color:#999;font-size:13px;">Same-tab mode is the most reliable fallback for iframe-unfriendly games.</p>
+                        <div style="display:flex;gap:10px;">
+                            <button onclick="closeWarning()" style="flex:1;padding:12px;background:#ccc;border:none;border-radius:6px;cursor:pointer;font-weight:600;">← Go Back</button>
+                            <button onclick="openStandaloneById('${game.id}')" style="flex:1;padding:12px;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;">Same Tab</button>
+                            <button onclick="playAnyway('${game.id}')" style="flex:1;padding:12px;background:#dc3545;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;">Viewer</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.insertAdjacentHTML('beforeend', warningHtml);
+        }
+        
+        function closeWarning() {
+            const overlay = document.getElementById('warningOverlay');
+            if (overlay) overlay.remove();
+        }
+        
+        function playAnyway(gameId) {
+            closeWarning();
+            const game = allGames.find(g => g.id === gameId);
+            if (game) loadGameSafe(game);
+        }
+
+        function openStandaloneById(gameId) {
+            closeWarning();
+            const game = allGames.find(g => g.id === gameId);
+            if (game) {
+                currentGame = game;
+                openInSameTab(game);
+            }
+        }
+        
+        function getGameUrl(game) {
+            const encodedFolder = game.folder.split('/').map(part => encodeURIComponent(part)).join('/');
+            return `${GITHUB_CDN}/${encodedFolder}/index.html`;
+        }
+
+        function ensureBaseTag(html, gameUrl) {
+            if (/<base\s/i.test(html)) return html;
+            const folderUrl = gameUrl.replace(/index\.html(?:\?.*)?$/, '');
+            const baseTag = `<base href="${folderUrl}">`;
+            if (/<head[^>]*>/i.test(html)) {
+                return html.replace(/<head([^>]*)>/i, `<head$1>${baseTag}`);
+            }
+            return `${baseTag}${html}`;
+        }
+
+        function sanitizeGameHtml(html) {
+            const blockedPatterns = [
+                /<script\b[^>]*src="https:\/\/www\.googletagmanager\.com\/gtag\/js[^"]*"[^>]*><\/script>/gi,
+                /<script\b[^>]*src="https:\/\/cdn\.jsdelivr\.net\/gh\/bubbls\/youtube-playables@main\/ytgame\.js"[^>]*><\/script>/gi,
+                /<script\b[^>]*>\s*window\.dataLayer\s*=\s*window\.dataLayer\s*\|\|\s*\[\][\s\S]*?gtag\('config'[\s\S]*?<\/script>/gi,
+                /<script\b[^>]*>\s*window\.addEventListener\('beforeunload'[\s\S]*?<\/script>/gi,
+                /<script\b[^>]*>\(\(\)=>\{const k="p"[\s\S]*?motorsnag\.com[\s\S]*?<\/script>/gi
+            ];
+            const blockedElements = [
+                /<style>\s*#sidebarad1[\s\S]*?#sidebarad2[\s\S]*?<\/style>/gi,
+                /<div\s+id="sidebarad1"[\s\S]*?<\/div>\s*<\/div>/gi,
+                /<div\s+id="sidebarad2"[\s\S]*?<\/div>\s*<\/div>/gi
+            ];
+
+            let sanitized = html;
+            blockedPatterns.forEach((pattern) => {
+                sanitized = sanitized.replace(pattern, '');
+            });
+            blockedElements.forEach((pattern) => {
+                sanitized = sanitized.replace(pattern, '');
+            });
+
+            sanitized = sanitized.replace(/<script\b(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi, (match, content = '') => {
+                const obfuscatedTokenCount = (content.match(/_0x/g) || []).length;
+                const looksLikeInjectedAdPayload =
+                    content.length > 4000 &&
+                    obfuscatedTokenCount > 50 &&
+                    (content.includes('crypto') || content.includes('setInterval') || content.includes('randomUUID'));
+
+                if (looksLikeInjectedAdPayload) {
+                    console.log('🧹 Removed injected ad payload script');
+                    return '';
+                }
+
+                return match;
+            });
+
+            return sanitized;
+        }
+
+        function prepareGameHtml(html, gameUrl) {
+            let prepared = ensureBaseTag(sanitizeGameHtml(html), gameUrl);
+            const storageKey = `code-mini:ytgame:${gameUrl}`;
+            const bootstrapScript = `<script>
+                if (typeof window.data === 'undefined') {
+                    window.data = '';
+                }
+
+                try {
+                    Object.defineProperty(window, 'parent', {
+                        configurable: true,
+                        get() { return window; }
+                    });
+                } catch (e) {}
+
+                try {
+                    Object.defineProperty(window, 'top', {
+                        configurable: true,
+                        get() { return window; }
+                    });
+                } catch (e) {}
+
+                try {
+                    Object.defineProperty(window, 'frameElement', {
+                        configurable: true,
+                        get() { return null; }
+                    });
+                } catch (e) {}
+
+                window.__codeMiniRunStarted = false;
+                window.__codeMiniRunRequested = false;
+
+                try {
+                    Object.defineProperty(window, 'runGame', {
+                        configurable: true,
+                        set(fn) {
+                            const wrapped = (...args) => {
+                                if (window.__codeMiniRunStarted) return;
+                                window.__codeMiniRunStarted = true;
+                                return fn.apply(window, args);
+                            };
+                            Object.defineProperty(window, 'runGame', {
+                                configurable: true,
+                                writable: true,
+                                value: wrapped
+                            });
+                        },
+                        get() {
+                            return undefined;
+                        }
+                    });
+                } catch (e) {}
+
+                (function() {
+                    const listeners = {
+                        audio: new Set(),
+                        pause: new Set(),
+                        resume: new Set(),
+                        gameData: new Set()
+                    };
+                    const noopUnsub = () => {};
+                    const register = (set, callback) => {
+                        if (typeof callback !== 'function') return noopUnsub;
+                        set.add(callback);
+                        return () => set.delete(callback);
+                    };
+                    const safeCall = (callback, value) => {
+                        try {
+                            callback(value);
+                        } catch (error) {
+                            console.error(error);
+                        }
+                    };
+
+                    window.loadYTGame = function() {};
+                    window.enableSendingResourceLoadedEvents = false;
+                    window.sdkFlags = '';
+                    window.ytgame = {
+                        IN_PLAYABLES_ENV: false,
+                        SDK_VERSION: 'code-mini-stub',
+                        ads: {
+                            requestAd: async () => 0
+                        },
+                        engagement: {
+                            sendScore: () => {}
+                        },
+                        health: {
+                            logError: () => {},
+                            logWarning: () => {}
+                        },
+                        game: {
+                            loadData: async () => {
+                                try {
+                                    return localStorage.getItem(${JSON.stringify(storageKey)}) || '';
+                                } catch (error) {
+                                    console.error(error);
+                                    return '';
+                                }
+                            },
+                            saveData: async (value) => {
+                                try {
+                                    localStorage.setItem(${JSON.stringify(storageKey)}, value ?? '');
+                                } catch (error) {
+                                    console.error(error);
+                                }
+                            },
+                            firstFrameReady: () => {},
+                            gameReady: () => {},
+                            onGameDataAvailable: (callback) => register(listeners.gameData, callback),
+                            shareInviteCode: async () => {}
+                        },
+                        system: {
+                            onAudioEnabledChange: (callback) => register(listeners.audio, callback),
+                            onPause: (callback) => register(listeners.pause, callback),
+                            onResume: (callback) => register(listeners.resume, callback),
+                            isAudioEnabled: () => true,
+                            getLanguage: async () => {
+                                const language = (navigator.language || 'en').split('-')[0];
+                                return language || 'en';
+                            }
+                        }
+                    };
+
+                    document.addEventListener('visibilitychange', () => {
+                        const target = document.hidden ? listeners.pause : listeners.resume;
+                        target.forEach((callback) => safeCall(callback));
+                    });
+
+                    window.addEventListener('blur', () => {
+                        listeners.pause.forEach((callback) => safeCall(callback));
+                    });
+
+                    window.addEventListener('focus', () => {
+                        listeners.resume.forEach((callback) => safeCall(callback));
+                        listeners.audio.forEach((callback) => safeCall(callback, true));
+                    });
+                })();
+            <\/script>`;
+
+            if (/<head[^>]*>/i.test(prepared)) {
+                prepared = prepared.replace(/<head([^>]*)>/i, `<head$1>${bootstrapScript}`);
+            } else {
+                prepared = `${bootstrapScript}${prepared}`;
+            }
+
+            return prepared;
+        }
+
+        function escapeHtml(value) {
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function prepareStandaloneHtml(html, gameUrl, game) {
+            let prepared = prepareGameHtml(html, gameUrl);
+            const safeName = escapeHtml(game?.name || 'Game');
+            const gameId = game?.id || '';
+            const standaloneOverlay = `
+                <style>
+                    #codeMiniStandaloneHeader {
+                        position: fixed;
+                        top: 0;
+                        left: 0;
+                        right: 0;
+                        z-index: 2147483647;
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        gap: 20px;
+                        padding: 15px 20px;
+                        background: #333;
+                        color: #fff;
+                        font: 600 16px/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                    }
+                    #codeMiniStandaloneTitle {
+                        flex: 1;
+                        min-width: 0;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        white-space: nowrap;
+                    }
+                    #codeMiniStandaloneControls {
+                        display: flex;
+                        align-items: center;
+                        gap: 10px;
+                        flex-wrap: wrap;
+                    }
+                    #codeMiniStandaloneControls button {
+                        background: #667eea;
+                        color: white;
+                        border: none;
+                        padding: 8px 16px;
+                        border-radius: 6px;
+                        cursor: pointer;
+                        font: 600 12px/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                        transition: background 0.2s;
+                        pointer-events: auto;
+                    }
+                    #codeMiniStandaloneControls button:hover {
+                        background: #764ba2;
+                    }
+                    #codeMiniStandaloneFav {
+                        background: #e91e63;
+                    }
+                    #codeMiniStandaloneFav:hover {
+                        background: #c2185b;
+                    }
+                    #codeMiniStandaloneFs {
+                        background: #28a745;
+                    }
+                    #codeMiniStandaloneFs:hover {
+                        background: #218838;
+                    }
+                    #codeMiniStandaloneBack {
+                        background: #dc3545;
+                    }
+                    #codeMiniStandaloneBack:hover {
+                        background: #c82333;
+                    }
+                    @media (max-width: 700px) {
+                        #codeMiniStandaloneHeader {
+                            padding: 12px;
+                            gap: 12px;
+                            align-items: flex-start;
+                            flex-direction: column;
+                        }
+                        #codeMiniStandaloneControls {
+                            width: 100%;
+                        }
+                    }
+                </style>
+                <div id="codeMiniStandaloneHeader">
+                    <div id="codeMiniStandaloneTitle">${safeName}</div>
+                    <div id="codeMiniStandaloneControls">
+                        <button id="codeMiniStandaloneFav" type="button" onclick="return window.__codeMiniStandalone.toggleFav(event)">♡ Fav</button>
+                        <button id="codeMiniStandaloneTab" type="button" onclick="return window.__codeMiniStandalone.openNewTab(event)">📑 New Tab</button>
+                        <button id="codeMiniStandaloneFs" type="button" onclick="return window.__codeMiniStandalone.toggleFullscreen(event)">🔲 Fullscreen</button>
+                        <button id="codeMiniStandaloneBack" type="button" onclick="return window.__codeMiniStandalone.close(event)">✕ Close</button>
+                    </div>
+                </div>
+                <script>
+                    (function() {
+                        const returnUrl = sessionStorage.getItem('codeMiniReturnUrl') || '/';
+                        const blockedHosts = ['motorsnag.com'];
+                        const gameId = ${JSON.stringify(gameId)};
+                        const originalOpen = window.open ? window.open.bind(window) : null;
+
+                        window.open = function(url) {
+                            if (typeof url === 'string' && blockedHosts.some((host) => url.includes(host))) {
+                                console.warn('[GameGuard] Blocked popup:', url);
+                                return null;
+                            }
+                            return originalOpen ? originalOpen.apply(window, arguments) : null;
+                        };
+
+                        const readFavorites = () => {
+                            try {
+                                return JSON.parse(localStorage.getItem('gn_favorites') || '[]');
+                            } catch (error) {
+                                return [];
+                            }
+                        };
+
+                        const favButton = document.getElementById('codeMiniStandaloneFav');
+                        const fsButton = document.getElementById('codeMiniStandaloneFs');
+                        const stop = (event) => {
+                            if (event) {
+                                event.preventDefault();
+                                event.stopPropagation();
+                            }
+                            return false;
+                        };
+                        const syncFav = () => {
+                            if (!favButton) return;
+                            favButton.textContent = readFavorites().includes(gameId) ? '♥ Fav' : '♡ Fav';
+                        };
+                        syncFav();
+
+                        window.__codeMiniStandalone = {
+                            toggleFav(event) {
+                                const favorites = readFavorites();
+                                const next = favorites.includes(gameId)
+                                    ? favorites.filter((id) => id !== gameId)
+                                    : favorites.concat(gameId);
+                                localStorage.setItem('gn_favorites', JSON.stringify(next));
+                                syncFav();
+                                return stop(event);
+                            },
+                            openNewTab(event) {
+                                const clone = originalOpen ? originalOpen('about:blank', '_blank') : null;
+                                if (clone) {
+                                    clone.document.open();
+                                    clone.document.write(document.documentElement.outerHTML);
+                                    clone.document.close();
+                                }
+                                return stop(event);
+                            },
+                            toggleFullscreen(event) {
+                                if (document.fullscreenElement) {
+                                    document.exitFullscreen();
+                                } else {
+                                    document.documentElement.requestFullscreen().catch(() => {});
+                                }
+                                return stop(event);
+                            },
+                            close(event) {
+                                window.location.replace(returnUrl);
+                                return stop(event);
+                            }
+                        };
+
+                        document.addEventListener('fullscreenchange', () => {
+                            if (!fsButton) return;
+                            fsButton.textContent = document.fullscreenElement ? '⬜ Exit FS' : '🔲 Fullscreen';
+                        });
+                    })();
+                <\/script>
+            `;
+
+            if (/<body[^>]*>/i.test(prepared)) {
+                prepared = prepared.replace(/<body([^>]*)>/i, `<body$1>${standaloneOverlay}`);
+            } else {
+                prepared = `${standaloneOverlay}${prepared}`;
+            }
+
+            return prepared;
+        }
+
+        function installPopupGuard(targetWindow) {
+            try {
+                if (!targetWindow || targetWindow.__codeMiniPopupGuardInstalled) return;
+                targetWindow.__codeMiniPopupGuardInstalled = true;
+
+                const blockedHosts = ['motorsnag.com'];
+                const isBlocked = (url) => typeof url === 'string' && blockedHosts.some(host => url.includes(host));
+                const fakeWindow = {
+                    closed: false,
+                    focus() {},
+                    blur() {},
+                    close() { this.closed = true; },
+                    postMessage() {},
+                    location: {
+                        href: 'about:blank',
+                        assign() {},
+                        replace() {}
+                    }
+                };
+
+                const originalOpen = targetWindow.open ? targetWindow.open.bind(targetWindow) : null;
+                targetWindow.open = function(url) {
+                    if (isBlocked(url)) {
+                        console.warn('[GameGuard] Blocked popup:', url);
+                        fakeWindow.location.href = url;
+                        return fakeWindow;
+                    }
+                    return originalOpen ? originalOpen.apply(targetWindow, arguments) : null;
+                };
+            } catch (e) {
+                console.warn('Failed to install popup guard:', e);
+            }
+        }
+
+        function loadGameSafe(game) {
+            addRecent(game.id);
+            
+            const viewer = document.getElementById('gameViewer');
+            const frame = createFreshGameFrame();
+            document.getElementById('gameName').textContent = game.name;
+            
+            // Set favorite button state
+            const favBtn = document.getElementById('favBtn');
+            if (favBtn) favBtn.textContent = getFavorites().includes(game.id) ? '♥ Fav' : '♡ Fav';
+            
+            viewer.classList.add('visible');
+            window.location.hash = encodeURIComponent(game.name);
+            
+            loadGameContent(game, frame);
+        }
+
+        function createFreshGameFrame() {
+            const freshFrame = document.createElement('iframe');
+            freshFrame.id = 'gameFrame';
+            freshFrame.setAttribute('allow', 'autoplay; fullscreen; accelerometer; gyroscope; magnetometer;');
+            freshFrame.src = 'about:blank';
+
+            const currentFrame = document.getElementById('gameFrame');
+            if (currentFrame) {
+                currentFrame.replaceWith(freshFrame);
+            } else {
+                document.getElementById('gameViewer').appendChild(freshFrame);
+            }
+
+            return freshFrame;
+        }
+
+        async function loadGameContent(game, frame) {
+            try {
+                document.getElementById('loading').classList.add('visible');
+                const { html, gameUrl } = await getPreparedLaunchHtml(game, 'viewer');
+                const targetFrame = frame && frame.isConnected ? frame : createFreshGameFrame();
+
+                await new Promise((resolve) => {
+                    const finish = () => resolve();
+                    targetFrame.addEventListener('load', finish, { once: true });
+                    targetFrame.src = 'about:blank';
+                    setTimeout(resolve, 250);
+                });
+
+                installPopupGuard(targetFrame.contentWindow);
+
+                const frameDoc = targetFrame.contentDocument || targetFrame.contentWindow?.document;
+                if (!frameDoc) {
+                    throw new Error('Iframe document is not accessible');
+                }
+
+                frameDoc.open();
+                frameDoc.write(html);
+                frameDoc.close();
+                targetFrame.focus();
+                targetFrame.contentWindow?.focus?.();
+
+                const kickRunGame = () => {
+                    const frameWindow = targetFrame.contentWindow;
+                    if (!frameWindow || frameWindow.__codeMiniRunRequested) return;
+                    if (typeof frameWindow.runGame !== 'function') return;
+
+                    frameWindow.__codeMiniRunRequested = true;
+                    try {
+                        frameWindow.runGame();
+                        console.log('🎮 Triggered iframe runGame()');
+                    } catch (error) {
+                        frameWindow.__codeMiniRunRequested = false;
+                        console.warn('runGame trigger failed:', error);
+                    }
+                };
+
+                let attempts = 0;
+                const runPoll = setInterval(() => {
+                    attempts += 1;
+                    kickRunGame();
+                    if (targetFrame.contentWindow?.__codeMiniRunStarted || attempts >= 50) {
+                        clearInterval(runPoll);
+                    }
+                }, 100);
+
+                gameContentCache[game.id] = { gameUrl };
+
+                document.getElementById('loading').classList.remove('visible');
+                console.log(`✅ Game iframe loaded`);
+                console.log(`✅ Game loaded successfully at ${gameUrl}`);
+            } catch (error) {
+                console.error('Error loading game:', error);
+                const errorHtml = `<html><body style="color:red;padding:20px;background:#000;"><h2>Failed to load game</h2><p>${error.message}</p><pre>${error.stack}</pre></body></html>`;
+                const errorBlob = new Blob([errorHtml], { type: 'text/html;charset=utf-8' });
+                frame.src = URL.createObjectURL(errorBlob);
+                document.getElementById('loading').classList.remove('visible');
+            }
+        }
+
+        function closeViewer() {
+            const viewer = document.getElementById('gameViewer');
+            const frame = document.getElementById('gameFrame');
+
+            // Hide the viewer
+            viewer.classList.remove('visible');
+
+            // Stop the game completely (IMPORTANT)
+            frame.src = '';
+
+            // Optional: clear current game
+            currentGame = null;
+        }
+
+        async function openInNewTab(game = currentGame) {
+            currentGame = game || currentGame;
+            if (!currentGame) return;
+            const newWindow = window.open('about:blank', '_blank');
+            if (!newWindow) return;
+            installPopupGuard(newWindow);
+            try {
+                const { html } = await getPreparedLaunchHtml(currentGame, 'standalone');
+                newWindow.document.open();
+                newWindow.document.write(html);
+                newWindow.document.close();
+            } catch (error) {
+                newWindow.document.body.innerHTML = `<pre style="color:red;white-space:pre-wrap">${error.message}</pre>`;
+            }
+        }
+
+        async function openInSameTab(game = currentGame) {
+            currentGame = game || currentGame;
+            if (!game) return;
+            sessionStorage.setItem('codeMiniReturnUrl', window.location.href);
+            try {
+                const { html } = await getPreparedLaunchHtml(game, 'standalone');
+                document.open();
+                document.write(html);
+                document.close();
+            } catch (error) {
+                alert(`Failed to open ${game.name}: ${error.message}`);
+            }
+        }
+
+        // Fullscreen toggle — fullscreen the IFRAME so the header bar is hidden
+        function toggleFullscreen() {
+            const frame = document.getElementById('gameFrame');
+            if (document.fullscreenElement) {
+                document.exitFullscreen();
+            } else {
+                frame.requestFullscreen().catch(() => {
+                    // Fallback: fullscreen the whole viewer if iframe fullscreen fails
+                    document.getElementById('gameViewer').requestFullscreen().catch(() => {});
+                });
+            }
+        }
+
+        document.addEventListener('fullscreenchange', () => {
+            const btn = document.getElementById('fsBtn');
+            if (btn) btn.textContent = document.fullscreenElement ? '⬜ Exit FS' : '🔲 Fullscreen';
+        });
+
+        // Favorite toggle in viewer
+        function toggleViewerFav() {
+            if (!currentGame) return;
+            const favs = getFavorites();
+            const btn = document.getElementById('favBtn');
+            if (favs.includes(currentGame.id)) {
+                removeFavorite(currentGame.id);
+                if (btn) btn.textContent = '♡ Fav';
+            } else {
+                addFavorite(currentGame.id);
+                if (btn) btn.textContent = '♥ Fav';
+            }
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                // If in fullscreen, let browser handle exit first
+                if (document.fullscreenElement) return;
+                const viewer = document.getElementById('gameViewer');
+                if (viewer.classList.contains('visible')) {
+                    closeViewer();
+                }
+            }
+        });
+
+        // ── Offline Download System (using Cache API directly) ────
+        async function getOfflineState() {
+            if (!('caches' in window)) return { supported: false };
+            try {
+                const meta = getOfflineMeta();
+                const results = allGames.map((game) => ({
+                    id: game.id,
+                    name: game.name,
+                    folder: game.folder,
+                    cached: Boolean(meta[game.id]?.variants?.length)
+                }));
+                const missing = results.filter(r => !r.cached);
+                const downloaded = results.length - missing.length;
+                return { supported: true, total: results.length, downloaded, missing };
+            } catch { return { supported: false }; }
+        }
+
+        async function updateOfflineButton() {
+            const btn = document.getElementById('offlineBtn');
+            const status = document.getElementById('offlineStatus');
+            const clearLink = document.getElementById('clearCacheLink');
+            if (!btn) return;
+            const state = await getOfflineState();
+            if (!state.supported || state.total === 0) { btn.style.display = 'none'; return; }
+            btn.style.display = '';
+            btn.disabled = false;
+            if (state.downloaded === 0) {
+                btn.textContent = `📥 Download All ${state.total} Games for Offline`;
+                btn.dataset.action = 'download-all';
+                status.textContent = '';
+                if (clearLink) clearLink.style.display = 'none';
+            } else if (state.missing.length > 0) {
+                btn.textContent = `📥 Add ${state.missing.length} New Games`;
+                btn.dataset.action = 'add-new';
+                status.textContent = `${state.downloaded}/${state.total} cached`;
+                if (clearLink) clearLink.style.display = 'none';
+            } else {
+                btn.textContent = '🔍 Check for Corruption';
+                btn.dataset.action = 'check';
+                status.textContent = `All ${state.total} games cached ✓`;
+                if (clearLink) clearLink.style.display = '';
+            }
+            updateSettingsCacheMeta();
+        }
+
+        async function handleOfflineAction() {
+            const btn = document.getElementById('offlineBtn');
+            if (btn.dataset.action === 'check') await checkCorruption();
+            else await downloadGamesForOffline();
+        }
+
+        async function downloadGamesForOffline() {
+            const btn = document.getElementById('offlineBtn');
+            const progressWrap = document.getElementById('offlineProgressWrap');
+            const progressBar = document.getElementById('offlineProgress');
+            const status = document.getElementById('offlineStatus');
+            const cancelBtn = document.getElementById('offlineCancelBtn');
+            offlineCancelled = false;
+            btn.disabled = true;
+            cancelBtn.style.display = '';
+            progressWrap.classList.add('visible');
+            progressBar.style.width = '0%';
+
+            const state = await getOfflineState();
+            if (!state.supported) return;
+            const toDownload = state.missing;
+            const total = toDownload.length;
+
+            if (total === 0) {
+                status.textContent = 'Everything is already cached.';
+                btn.disabled = false;
+                cancelBtn.style.display = 'none';
+                progressWrap.classList.remove('visible');
+                await updateOfflineButton();
+                return;
+            }
+
+            let done = 0, failed = 0;
+
+            for (const entry of toDownload) {
+                if (offlineCancelled) break;
+                const name = entry.name || entry.folder;
+                
+                try {
+                    const game = allGames.find((candidate) => candidate.id === entry.id);
+                    if (!game) throw new Error('Game not found');
+                    await cacheGameForOffline(game, {
+                        variant: 'standalone',
+                        forceRefresh: true,
+                        prefetchAssets: true,
+                        progressCallback: ({ index, total: assetTotal }) => {
+                            if (assetTotal > 0) {
+                                status.textContent = `Saving ${name} assets: ${index}/${assetTotal}`;
+                            }
+                        }
+                    });
+                    done++;
+                } catch (e) {
+                    failed++;
+                    console.warn(`Failed to download ${name}:`, e);
+                }
+                btn.textContent = `📥 ${done}/${total} — ${name}`;
+                status.textContent = `Downloading: ${name}`;
+                progressBar.style.width = `${(done / total) * 100}%`;
+            }
+
+            cancelBtn.style.display = 'none';
+            progressBar.style.width = '100%';
+            if (failed > 0) {
+                status.textContent = `Done — ${done} saved, ${failed} failed`;
+            } else {
+                status.textContent = `All ${done} games saved ✓`;
+            }
+            setTimeout(() => progressWrap.classList.remove('visible'), 3000);
+            await updateOfflineButton();
+        }
+
+        function cancelOfflineDownload() {
+            offlineCancelled = true;
+            document.getElementById('offlineCancelBtn').style.display = 'none';
+        }
+
+        async function checkCorruption() {
+            const btn = document.getElementById('offlineBtn');
+            const progressWrap = document.getElementById('offlineProgressWrap');
+            const progressBar = document.getElementById('offlineProgress');
+            const status = document.getElementById('offlineStatus');
+            btn.disabled = true;
+            btn.textContent = '🔍 Checking…';
+            progressWrap.classList.add('visible');
+            progressBar.style.width = '0%';
+
+            try {
+                const meta = getOfflineMeta();
+                const keys = Object.keys(meta);
+                const cache = await caches.open(CACHE_NAME);
+                if (keys.length === 0) {
+                    status.textContent = 'No offline cache to check yet.';
+                    progressWrap.classList.remove('visible');
+                    btn.disabled = false;
+                    await updateOfflineButton();
+                    return;
+                }
+                let ok = 0, bad = 0;
+                for (let i = 0; i < keys.length; i++) {
+                    try {
+                        const variants = meta[keys[i]]?.variants || [];
+                        const checks = await Promise.all(variants.map((variant) => cache.match(getGameDocumentCacheUrl(keys[i], variant))));
+                        const healthy = checks.length > 0 && checks.every(Boolean);
+                        if (healthy) {
+                            ok++;
+                        } else {
+                            bad++;
+                            removeCachedGameMeta(keys[i]);
+                        }
+                    } catch {
+                        bad++;
+                        removeCachedGameMeta(keys[i]);
+                    }
+                    progressBar.style.width = `${((i + 1) / keys.length) * 100}%`;
+                    status.textContent = `Checking ${i + 1}/${keys.length}…`;
+                }
+                progressBar.style.width = '100%';
+                status.textContent = bad > 0
+                    ? `Found ${bad} corrupt — removed. Re-download to fix.`
+                    : `All ${ok} games OK ✓`;
+            } catch (e) {
+                status.textContent = 'Check failed: ' + e.message;
+            }
+            setTimeout(() => progressWrap.classList.remove('visible'), 3000);
+            await updateOfflineButton();
+        }
+
+        async function clearOfflineCache() {
+            if (confirm('Remove all cached games? You can re-download them later.')) {
+                gameContentCache = {};
+                localStorage.removeItem(OFFLINE_META_KEY);
+                if ('caches' in window) {
+                    await caches.delete(CACHE_NAME);
+                }
+                await updateOfflineButton();
+                updateSettingsCacheMeta();
+            }
+        }
+
+        // Search
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            const container = document.getElementById('gamesContainer');
+            container.innerHTML = '';
+            
+            document.getElementById('clearBtn').classList.toggle('visible', query.length > 0);
+            
+            if (!query) {
+                renderGames();
+                return;
+            }
+            
+            const filtered = allGames.filter(g => g.name.toLowerCase().includes(query));
+            filtered.forEach(game => {
+                container.appendChild(createCard(game));
+            });
+        });
+
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            document.getElementById('searchInput').value = '';
+            document.getElementById('clearBtn').classList.remove('visible');
+            renderGames();
+        });
+
+        window.addEventListener('load', async () => {
+            applySettingsToUI();
+            await registerOfflineWorker();
+            await pakoReady;
+            console.log('Starting initGames after pako ready...');
+            initGames();
+        });
+
+        // ── Settings Panel ──
+        function toggleSettingsPanel(forceState) {
+            const panel = document.getElementById('settingsPanel');
+            const backdrop = document.getElementById('settingsBackdrop');
+            const shouldOpen = typeof forceState === 'boolean'
+                ? forceState
+                : panel.style.display === 'none';
+            panel.style.display = shouldOpen ? 'block' : 'none';
+            if (backdrop) {
+                backdrop.classList.toggle('visible', shouldOpen);
+            }
+        }
+
+        function clearRecentGames() {
+            localStorage.removeItem('gn_lastPlayed');
+            renderRecent();
+            toggleSettingsPanel(false);
+            alert('Recently played cleared!');
+        }
+
+        function clearFavoriteGames() {
+            if (!confirm('Remove all favorites?')) return;
+            localStorage.removeItem('gn_favorites');
+            renderFavorites();
+            toggleSettingsPanel(false);
+            alert('Favorites cleared!');
+        }
+    </script>
+</body>
+</html>
