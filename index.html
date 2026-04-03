@@ -7,6 +7,8 @@
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75' fill='%23667eea'>🎮</text></svg>">
     <!-- Pako library for gzip decompression -->
     <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+    <!-- JSZip for ZIP file support -->
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <script>
         // Ensure pako is available
         const pakoReady = new Promise((resolve) => {
@@ -318,6 +320,27 @@
             justify-content: center;
         }
 
+        #importZipBtn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 2px solid rgba(255,255,255,0.4);
+            padding: 10px 20px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: background 0.2s, border-color 0.2s;
+        }
+
+        #importZipBtn:hover:not(:disabled) {
+            background: rgba(255,255,255,0.35);
+            border-color: rgba(255,255,255,0.7);
+        }
+
+        #zipFileInput {
+            display: none;
+        }
+
         #offlineBtn {
             background: rgba(255,255,255,0.2);
             color: white;
@@ -555,10 +578,12 @@
             <button class="clear-search" id="clearBtn">✕</button>
         </div>
         <div class="offline-section">
+            <button id="importZipBtn" onclick="triggerZipImport()">📦 Import ZIP</button>
             <button id="offlineBtn" onclick="handleOfflineAction()" style="display:none">📥 Download All for Offline</button>
             <button id="offlineCancelBtn" onclick="cancelOfflineDownload()">Cancel</button>
             <span id="offlineStatus"></span>
             <a href="#" id="clearCacheLink" onclick="clearOfflineCache(); return false;" style="display:none">clear cache</a>
+            <input type="file" id="zipFileInput" accept=".zip" onchange="handleZipImport(event)">
         </div>
         <div class="offline-section">
             <div class="offline-progress-wrap" id="offlineProgressWrap">
@@ -573,6 +598,11 @@
         <div class="section" id="recentSection">
             <div class="section-title">⭐ Recently Played</div>
             <div class="game-container" id="recentContainer"></div>
+        </div>
+
+        <div class="section" id="zippedSection">
+            <div class="section-title">📦 Zipped Games</div>
+            <div class="game-container" id="zippedContainer"></div>
         </div>
 
         <div class="section" id="favoritesSection">
@@ -683,6 +713,9 @@
         const CACHE_NAME = 'gn-offline-v1';
         const SETTINGS_KEY = 'gn_settings_v1';
         const OFFLINE_META_KEY = 'gn_offline_meta_v1';
+        const ZIPPED_GAMES_KEY = 'gn_zipped_games_v1';
+        const GAMES_JSON_CACHE_KEY = 'gn_games_json_v1';
+        const COVER_MAP_CACHE_KEY = 'gn_cover_map_v1';
         let offlineCancelled = false;
         const COVERS_CDN = 'https://cdn.jsdelivr.net/gh/gn-math/covers@main';
         const GITHUB_OWNER = 'Sirco-web';
@@ -1400,11 +1433,78 @@
         async function registerOfflineWorker() {
             if (!('serviceWorker' in navigator)) return null;
             try {
-                const registration = await navigator.serviceWorker.register('./sw.js');
-                await navigator.serviceWorker.ready;
-                return registration;
+                // Try registering with blob URL first
+                const swCode = `
+const CACHE_NAME = 'gn-offline-v1';
+const ALLOWED_HOSTS = new Set([
+  self.location.hostname,
+  'cdn.jsdelivr.net',
+  'raw.githubusercontent.com'
+]);
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(self.skipWaiting());
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+
+  if (request.method !== 'GET') return;
+
+  let url;
+  try {
+    url = new URL(request.url);
+  } catch {
+    return;
+  }
+
+  if (!ALLOWED_HOSTS.has(url.hostname)) return;
+
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    const cached = await cache.match(request);
+    if (cached) {
+      return cached;
+    }
+
+    try {
+      const response = await fetch(request);
+      if (response && (response.ok || response.type === 'opaque')) {
+        cache.put(request, response.clone()).catch(() => {});
+      }
+      return response;
+    } catch (error) {
+      const fallback = await cache.match(request);
+      if (fallback) {
+        return fallback;
+      }
+      throw error;
+    }
+  })());
+});
+                `;
+                
+                const blob = new Blob([swCode], { type: 'application/javascript' });
+                const swUrl = URL.createObjectURL(blob);
+                
+                try {
+                    const registration = await navigator.serviceWorker.register(swUrl);
+                    await navigator.serviceWorker.ready;
+                    console.log('✓ Service worker registered');
+                    return registration;
+                } catch (blobError) {
+                    // Service Worker registration failed - this is OK
+                    // The app still works with Cache API for offline features
+                    // This commonly happens in restricted environments like Codespaces
+                    console.log('ℹ️ Service Worker unavailable (offline caching via Cache API only)');
+                    return null;
+                }
             } catch (error) {
-                console.warn('Service worker registration failed:', error);
+                console.log('ℹ️ Service Worker registration skipped');
                 return null;
             }
         }
@@ -1413,22 +1513,72 @@
             try {
                 document.getElementById('loading').classList.add('visible');
                 
-                // Fetch games.json from GitHub raw
-                const gamesJson = await fetchFromGitHub('games.json');
+                // Fetch and cache games.json from GitHub
+                let gamesJson = null;
+                try {
+                    gamesJson = await fetchFromGitHub('games.json');
+                    // Cache the fetched games.json
+                    try {
+                        localStorage.setItem(GAMES_JSON_CACHE_KEY, gamesJson);
+                        console.log('✓ Cached games.json');
+                    } catch (e) {
+                        console.warn('Could not cache games.json:', e);
+                    }
+                } catch (e) {
+                    // If fetch fails, try to use cached version
+                    console.warn('Could not fetch latest games.json, trying cache:', e);
+                    try {
+                        gamesJson = localStorage.getItem(GAMES_JSON_CACHE_KEY);
+                        if (!gamesJson) throw new Error('No cached games.json available');
+                        console.log('✓ Using cached games.json');
+                    } catch (cacheError) {
+                        console.error('Failed to load games:', cacheError);
+                        document.getElementById('loading').classList.remove('visible');
+                        throw cacheError;
+                    }
+                }
+
                 const games = JSON.parse(gamesJson);
                 allGames = games.filter(g => !g.id.startsWith('-') && !g.name.includes('[!]'));
 
-                // Load cover map (name → numeric id) from zones.json
+                // Load and cache cover map
                 try {
                     const zr = await fetch('https://cdn.jsdelivr.net/gh/gn-math/assets@main/zones.json');
                     if (zr.ok) {
                         const zones = await zr.json();
                         zones.forEach(z => { if (z.name && z.id) coverMap[z.name] = z.id; });
+                        // Cache cover map
+                        try {
+                            localStorage.setItem(COVER_MAP_CACHE_KEY, JSON.stringify(coverMap));
+                            console.log('✓ Cached cover map');
+                        } catch (e) {
+                            console.warn('Could not cache cover map:', e);
+                        }
                     }
-                } catch(e) { console.warn('Cover map unavailable:', e); }
+                } catch(e) { 
+                    // Try to use cached cover map
+                    try {
+                        const cachedMap = localStorage.getItem(COVER_MAP_CACHE_KEY);
+                        if (cachedMap) {
+                            coverMap = JSON.parse(cachedMap);
+                            console.log('✓ Using cached cover map');
+                        }
+                    } catch (cacheErr) {
+                        console.warn('Cover map unavailable:', e);
+                    }
+                }
+
+                // Add zipped games to allGames
+                const zippedGames = getZippedGames();
+                zippedGames.forEach(zipGame => {
+                    if (!allGames.find(g => g.id === zipGame.id)) {
+                        allGames.push(zipGame);
+                    }
+                });
 
                 renderGames();
                 renderRecent();
+                renderZipped();
                 renderFavorites();
                 document.getElementById('loading').classList.remove('visible');
                 applySettingsToUI();
@@ -1463,6 +1613,30 @@
             });
         }
 
+        function renderZipped() {
+            const zipped = getZippedGames();
+            const container = document.getElementById('zippedContainer');
+            if (!container) return;
+
+            container.innerHTML = '';
+            
+            if (zipped.length === 0) {
+                container.innerHTML = '<p style="color:#999">No zipped games imported yet</p>';
+                return;
+            }
+
+            zipped.forEach(zipGame => {
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.innerHTML = `
+                    <div class="card-icon">📦</div>
+                    <div class="card-name">zipped - ${zipGame.name}</div>
+                `;
+                card.onclick = () => playGame(zipGame);
+                container.appendChild(card);
+            });
+        }
+
         function renderFavorites() {
             const favs = getFavorites();
             const container = document.getElementById('favContainer');
@@ -1483,18 +1657,21 @@
             const card = document.createElement('div');
             card.className = 'card';
 
+            // Check if this is a zipped game
+            const displayName = isZippedGame(game.id) ? `zipped - ${game.name}` : game.name;
+
             // Use numeric zone ID for cover, or game.id if already numeric
             const numId = coverMap[game.name] || (/^\d+$/.test(game.id) ? game.id : null);
-            if (numId !== null) {
+            if (numId !== null && !isZippedGame(game.id)) {
                 card.innerHTML = `
                     <img class="card-cover" src="${COVERS_CDN}/${numId}.png" alt="" loading="lazy"
                          onerror="this.outerHTML='<div class=card-icon>🎯</div>'">
-                    <div class="card-name">${game.name}</div>
+                    <div class="card-name">${displayName}</div>
                 `;
             } else {
                 card.innerHTML = `
-                    <div class="card-icon">🎯</div>
-                    <div class="card-name">${game.name}</div>
+                    <div class="card-icon">${isZippedGame(game.id) ? '📦' : '🎯'}</div>
+                    <div class="card-name">${displayName}</div>
                 `;
             }
             card.onclick = () => playGame(game);
@@ -1540,6 +1717,36 @@
             recent = recent.slice(0, MAX_RECENT);
             localStorage.setItem('gn_lastPlayed', JSON.stringify(recent));
             renderRecent();
+        }
+
+        function getZippedGames() {
+            try {
+                return JSON.parse(localStorage.getItem(ZIPPED_GAMES_KEY) || '[]');
+            } catch {
+                return [];
+            }
+        }
+
+        function addZippedGame(zipGame) {
+            const zipped = getZippedGames();
+            if (!zipped.find(z => z.id === zipGame.id)) {
+                zipped.push(zipGame);
+                localStorage.setItem(ZIPPED_GAMES_KEY, JSON.stringify(zipped));
+                console.log(`✓ Added zipped game: ${zipGame.name}`);
+            }
+        }
+
+        function getZippedGameName(gameName) {
+            const zipped = getZippedGames();
+            if (zipped.find(z => z.name === gameName)) {
+                return `zipped - ${gameName}`;
+            }
+            return gameName;
+        }
+
+        function isZippedGame(gameId) {
+            const zipped = getZippedGames();
+            return zipped.some(z => z.id === gameId);
         }
 
         function getSettings() {
@@ -1693,6 +1900,212 @@
             return Array.from(assets);
         }
 
+        // ZIP Import Functions
+        function triggerZipImport() {
+            document.getElementById('zipFileInput').click();
+        }
+
+        async function handleZipImport(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const btn = document.getElementById('importZipBtn');
+            const status = document.getElementById('offlineStatus');
+            btn.disabled = true;
+            btn.textContent = '📦 Processing...';
+            status.textContent = 'Reading ZIP file...';
+
+            try {
+                const zip = new JSZip();
+                const zipData = await zip.loadAsync(file);
+                const importedGames = [];
+                
+                // Find all game folders with index.html
+                const gameIndexes = Object.keys(zipData.files).filter(path => 
+                    path.endsWith('index.html') && !path.includes('__MACOSX')
+                );
+
+                for (const indexPath of gameIndexes) {
+                    const gameFolderPath = indexPath.substring(0, indexPath.lastIndexOf('/'));
+                    const gameName = gameFolderPath.split('/').pop() || 'Unknown Game';
+                    
+                    // Create unique ID for zipped game
+                    const gameId = `zipped_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                    
+                    // Cache the entire game folder
+                    status.textContent = `Importing: ${gameName}...`;
+                    console.log(`📦 Importing game: ${gameName}`);
+
+                    // Get all files in the game folder
+                    const gameFiles = Object.keys(zipData.files).filter(path => 
+                        path.startsWith(gameFolderPath + '/') && !zipData.files[path].dir
+                    );
+
+                    if (!('caches' in window)) {
+                        status.textContent = `Cannot cache games: Service Worker not available`;
+                        continue;
+                    }
+
+                    const cache = await caches.open(CACHE_NAME);
+                    let fileCount = 0;
+
+                    for (const filePath of gameFiles) {
+                        try {
+                            const file = zipData.files[filePath];
+                            const relativeUrl = filePath.substring(gameFolderPath.length + 1);
+                            const fileUrl = `${location.origin}/__code-mini-zip__/${gameId}/${relativeUrl}`;
+                            
+                            const blob = await file.async('blob');
+                            const response = new Response(blob, {
+                                headers: {
+                                    'Content-Type': getMimeType(relativeUrl)
+                                }
+                            });
+
+                            await cache.put(fileUrl, response);
+                            fileCount++;
+                        } catch (e) {
+                            console.warn(`Failed to cache file: ${filePath}`, e);
+                        }
+                    }
+
+                    // Register the zipped game
+                    const zipGame = {
+                        id: gameId,
+                        name: gameName,
+                        folder: `__code-mini-zip__/${gameId}`,
+                        isZipped: true
+                    };
+
+                    addZippedGame(zipGame);
+                    
+                    // Add to allGames if not already there
+                    if (!allGames.find(g => g.id === gameId)) {
+                        allGames.push(zipGame);
+                    }
+
+                    importedGames.push({ name: gameName, fileCount });
+                }
+
+                if (importedGames.length === 0) {
+                    status.textContent = '⚠️ No games found in ZIP that contain index.html';
+                } else {
+                    let message = `✓ Imported ${importedGames.length} game(s): `;
+                    message += importedGames.map(g => `${g.name} (${g.fileCount} files)`).join(', ');
+                    status.textContent = message;
+                    
+                    // Refresh the UI to show new zipped games
+                    renderGames();
+                    renderZipped();
+                    console.log('📦 ZIP import complete:', importedGames);
+                }
+            } catch (error) {
+                status.textContent = `❌ Error importing ZIP: ${error.message}`;
+                console.error('ZIP import error:', error);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '📦 Import ZIP';
+                event.target.value = ''; // Reset file input
+                setTimeout(() => {
+                    status.textContent = '';
+                }, 4000);
+            }
+        }
+
+        function getMimeType(filename) {
+            const ext = filename.split('.').pop().toLowerCase();
+            const mimeTypes = {
+                'html': 'text/html',
+                'htm': 'text/html',
+                'js': 'application/javascript',
+                'css': 'text/css',
+                'json': 'application/json',
+                'png': 'image/png',
+                'jpg': 'image/jpeg',
+                'jpeg': 'image/jpeg',
+                'gif': 'image/gif',
+                'svg': 'image/svg+xml',
+                'webp': 'image/webp',
+                'mp3': 'audio/mpeg',
+                'wav': 'audio/wav',
+                'mp4': 'video/mp4',
+                'webm': 'video/webm',
+                'woff': 'font/woff',
+                'woff2': 'font/woff2',
+                'ttf': 'font/ttf',
+                'eot': 'application/vnd.ms-fontobject'
+            };
+            return mimeTypes[ext] || 'application/octet-stream';
+        }
+
+        function isValidResponse(response) {
+            // Check if response exists
+            if (!response) return false;
+            
+            // Check status code is in 200-299 range (not 403/404/etc)
+            if (response.status && (response.status < 200 || response.status >= 300)) {
+                return false;
+            }
+            
+            // Accept opaque responses (CORS) and ok responses
+            if (response.type === 'opaque') return true;
+            return response.ok;
+        }
+
+        async function fetchAssetWithProxy(url) {
+            // Try direct fetch first (fastest)
+            try {
+                const response = await fetch(url, {
+                    mode: 'no-cors',
+                    credentials: 'omit'
+                });
+                if (isValidResponse(response)) {
+                    console.log(`✓ Direct fetch OK: ${url}`);
+                    return response;
+                }
+                console.warn(`✗ Direct fetch invalid (${response.status}): ${url}`);
+            } catch (e) {
+                console.warn(`✗ Direct fetch error: ${url}`);
+            }
+
+            // Try each proxy in order
+            for (let proxy of CORS_PROXIES) {
+                try {
+                    let proxyUrl;
+                    let opts = { 
+                        mode: 'no-cors', 
+                        credentials: 'omit',
+                        headers: {}
+                    };
+
+                    if (proxy.includes('corsify') || proxy.includes('timco-store1')) {
+                        proxyUrl = proxy + encodeURIComponent(url);
+                    } else if (proxy.includes('corsproxy.io')) {
+                        proxyUrl = proxy + url;
+                    } else if (proxy.includes('proxy.cors.sh')) {
+                        proxyUrl = proxy + url;
+                        opts.headers['x-cors-api-key'] = CORS_SH_API_KEY;
+                    } else {
+                        proxyUrl = proxy + encodeURIComponent(url);
+                    }
+
+                    console.log(`🔄 Trying proxy: ${proxy.split('?')[0]}`);
+                    const response = await fetch(proxyUrl, opts);
+                    
+                    if (isValidResponse(response)) {
+                        console.log(`✓ Proxy OK: ${proxy}`);
+                        return response;
+                    } else {
+                        console.warn(`✗ Proxy invalid (${response.status}): ${proxy}`);
+                    }
+                } catch (e) {
+                    console.warn(`✗ Proxy error: ${e.message}`);
+                }
+            }
+
+            return null;
+        }
+
         async function prefetchAssetUrls(assetUrls, progressCallback) {
             if (!('caches' in window) || assetUrls.length === 0) {
                 return { total: assetUrls.length, cached: 0, failed: 0 };
@@ -1706,26 +2119,34 @@
                 if (offlineCancelled) break;
 
                 const url = assetUrls[index];
-                const request = new Request(url, {
-                    mode: url.startsWith(location.origin) ? 'same-origin' : 'no-cors',
-                    credentials: 'omit'
-                });
 
                 try {
+                    const request = new Request(url, {
+                        mode: url.startsWith(location.origin) ? 'same-origin' : 'no-cors',
+                        credentials: 'omit'
+                    });
+
+                    // Check if already properly cached
                     const existing = await cache.match(request);
-                    if (existing) {
+                    if (existing && isValidResponse(existing)) {
                         cached += 1;
+                        console.log(`⚡ Cached: ${url}`);
                     } else {
-                        const response = await fetch(request);
-                        if (response && (response.ok || response.type === 'opaque')) {
+                        // Fetch with fallback
+                        const response = await fetchAssetWithProxy(url);
+                        
+                        if (response && isValidResponse(response)) {
                             await cache.put(request, response.clone());
                             cached += 1;
+                            console.log(`💾 Saved: ${url}`);
                         } else {
                             failed += 1;
+                            console.warn(`❌ Failed: ${url}`);
                         }
                     }
                 } catch (error) {
                     failed += 1;
+                    console.error(`❌ Error: ${url}`, error.message);
                 }
 
                 if (typeof progressCallback === 'function') {
@@ -1739,6 +2160,7 @@
                 }
             }
 
+            console.log(`📊 Asset prefetch done: ${cached}/${assetUrls.length} good, ${failed} failed`);
             return { total: assetUrls.length, cached, failed };
         }
 
@@ -1764,10 +2186,40 @@
 
             if (!html) {
                 const response = await fetch(`${gameUrl}?t=${Date.now()}`, { cache: 'no-store' });
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch game HTML: ${response.status}`);
+                
+                // Validate response is actually HTML and successful
+                if (!response.ok || response.status < 200 || response.status >= 300) {
+                    throw new Error(`Failed to fetch game HTML: ${response.status} ${response.statusText}`);
                 }
+                
                 const rawHtml = await response.text();
+                
+                // Validate we got actual HTML content
+                // Accept text/plain, text/html, and application/* as these might be game files
+                const contentType = response.headers.get('content-type') || '';
+                const isLikelyHtml = rawHtml.trim().startsWith('<') || 
+                                    rawHtml.includes('<!DOCTYPE') || 
+                                    rawHtml.includes('<html') ||
+                                    rawHtml.includes('<script') ||
+                                    rawHtml.includes('<canvas');
+                
+                // Reject error pages (short responses with error titles)
+                if ((rawHtml.includes('<title>404') || rawHtml.includes('<title>403') ||
+                     rawHtml.includes('<!DOCTYPE html') && rawHtml.includes('ERR_')) &&
+                    rawHtml.length < 1000) {
+                    throw new Error(`Downloaded error page (${rawHtml.length} bytes)`);
+                }
+                
+                // Warn but don't fail if content-type is unexpected but content looks OK
+                if (!contentType.includes('text/') && !contentType.includes('application/')) {
+                    console.warn(`[Game Load] Unexpected content-type: ${contentType}, but content looks valid`);
+                }
+                
+                // Fail if content doesn't look like HTML at all
+                if (!isLikelyHtml && rawHtml.length > 50) {
+                    throw new Error(`Content doesn't appear to be HTML (${contentType})`);
+                }
+                
                 html = variant === 'viewer'
                     ? prepareGameHtml(rawHtml, gameUrl)
                     : prepareStandaloneHtml(rawHtml, gameUrl, game);
@@ -1846,6 +2298,7 @@
         function applySettingsToUI() {
             const settings = getSettings();
             const recentSection = document.getElementById('recentSection');
+            const zippedSection = document.getElementById('zippedSection');
             const favoritesSection = document.getElementById('favoritesSection');
 
             const setValue = (id, value) => {
@@ -1867,6 +2320,7 @@
             setChecked('showCompatibilityBannerSetting', settings.showCompatibilityBanner);
 
             if (recentSection) recentSection.style.display = settings.showRecentSection ? '' : 'none';
+            if (zippedSection) zippedSection.style.display = ''; // Always show zipped section
             if (favoritesSection) favoritesSection.style.display = settings.showFavoritesSection ? '' : 'none';
 
             applyCardDensity(settings.cardDensity);
@@ -1967,6 +2421,10 @@
         }
         
         function getGameUrl(game) {
+            // If it's a zipped game, return the cached URL
+            if (game.isZipped || game.id.startsWith('zipped_')) {
+                return `${location.origin}/${game.folder}/index.html`;
+            }
             const encodedFolder = game.folder.split('/').map(part => encodeURIComponent(part)).join('/');
             return `${GITHUB_CDN}/${encodedFolder}/index.html`;
         }
@@ -2393,7 +2851,8 @@
             
             const viewer = document.getElementById('gameViewer');
             const frame = createFreshGameFrame();
-            document.getElementById('gameName').textContent = game.name;
+            const displayName = isZippedGame(game.id) ? `zipped - ${game.name}` : game.name;
+            document.getElementById('gameName').textContent = displayName;
             
             // Set favorite button state
             const favBtn = document.getElementById('favBtn');
@@ -2489,13 +2948,22 @@
             const viewer = document.getElementById('gameViewer');
             const frame = document.getElementById('gameFrame');
 
+            try {
+                // Stop any running scripts in the iframe
+                if (frame.contentWindow) {
+                    frame.contentWindow.stop();
+                }
+            } catch (e) {
+                console.warn('Could not stop iframe:', e);
+            }
+
+            // Clear the iframe src to properly unload it
+            frame.src = 'about:blank';
+            
             // Hide the viewer
             viewer.classList.remove('visible');
 
-            // Stop the game completely (IMPORTANT)
-            frame.src = '';
-
-            // Optional: clear current game
+            // Clear current game
             currentGame = null;
         }
 
@@ -2651,40 +3119,58 @@
             }
 
             let done = 0, failed = 0;
+            const failedGames = [];
 
             for (const entry of toDownload) {
                 if (offlineCancelled) break;
                 const name = entry.name || entry.folder;
                 
+                btn.textContent = `📥 Downloading: ${name}`;
+                status.textContent = `Fetching ${name}...`;
+                progressBar.style.width = `${((done + failed) / total) * 100}%`;
+                
                 try {
                     const game = allGames.find((candidate) => candidate.id === entry.id);
-                    if (!game) throw new Error('Game not found');
+                    if (!game) throw new Error('Game not found in library');
+                    
                     await cacheGameForOffline(game, {
                         variant: 'standalone',
                         forceRefresh: true,
                         prefetchAssets: true,
                         progressCallback: ({ index, total: assetTotal }) => {
                             if (assetTotal > 0) {
-                                status.textContent = `Saving ${name} assets: ${index}/${assetTotal}`;
+                                const assetPercent = Math.round((index / assetTotal) * 80);
+                                progressBar.style.width = `${Math.min(80, ((done + failed) / total) * 100 + assetPercent / total)}%`;
+                                status.textContent = `Saving assets: ${index}/${assetTotal} for ${name}`;
                             }
                         }
                     });
                     done++;
+                    console.log(`✓ Downloaded: ${name}`);
                 } catch (e) {
                     failed++;
-                    console.warn(`Failed to download ${name}:`, e);
+                    failedGames.push(name);
+                    console.error(`✗ Failed to download ${name}: ${e.message}`);
+                    status.textContent = `⚠️ Failed: ${name} - ${e.message}`;
                 }
-                btn.textContent = `📥 ${done}/${total} — ${name}`;
-                status.textContent = `Downloading: ${name}`;
-                progressBar.style.width = `${(done / total) * 100}%`;
+                
+                progressBar.style.width = `${((done + failed) / total) * 100}%`;
             }
 
             cancelBtn.style.display = 'none';
             progressBar.style.width = '100%';
+            
             if (failed > 0) {
-                status.textContent = `Done — ${done} saved, ${failed} failed`;
+                let failMsg = `Done — ${done}/${total} saved, ${failed} failed`;
+                if (failedGames.length > 0) {
+                    failMsg += `\n\nFailed: ${failedGames.slice(0, 5).join(', ')}`;
+                    if (failedGames.length > 5) {
+                        failMsg += ` and ${failedGames.length - 5} more`;
+                    }
+                }
+                status.textContent = failMsg;
             } else {
-                status.textContent = `All ${done} games saved ✓`;
+                status.textContent = `✓ All ${done} games saved successfully!`;
             }
             setTimeout(() => progressWrap.classList.remove('visible'), 3000);
             await updateOfflineButton();
