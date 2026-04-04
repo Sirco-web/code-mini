@@ -279,7 +279,13 @@
         }
         
         #gameViewer:fullscreen .viewer-header {
-            display: none;
+            display: none !important;
+            visibility: hidden !important;
+            height: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            overflow: hidden !important;
+            pointer-events: none !important;
         }
         
         #gameFrame:fullscreen {
@@ -3338,12 +3344,25 @@ self.addEventListener('fetch', (event) => {
 
         document.addEventListener('fullscreenchange', () => {
             const btn = document.getElementById('fsBtn');
-            const viewer = document.getElementById('gameViewer');
             const header = document.querySelector('.viewer-header');
-            if (btn) {
-                btn.textContent = document.fullscreenElement ? '⬜ Exit FS' : '🔲 Fullscreen';
+            
+            if (document.fullscreenElement) {
+                // In fullscreen - hide header with multiple methods
+                if (header) {
+                    header.style.display = 'none !important';
+                    header.style.visibility = 'hidden';
+                    header.style.height = '0';
+                }
+                if (btn) btn.textContent = '⬜ Exit FS';
+            } else {
+                // Not in fullscreen - show header normally
+                if (header) {
+                    header.style.display = '';
+                    header.style.visibility = '';
+                    header.style.height = '';
+                }
+                if (btn) btn.textContent = '🔲 Fullscreen';
             }
-            // The header is hidden via CSS :fullscreen selector
         });
 
         // Toggle section collapse/expand
