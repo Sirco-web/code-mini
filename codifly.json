@@ -4,14 +4,14 @@
   "email": "legal@gace.space",
   "codeGen": "site",
   "description": "Best Code line up we have made so far, with a comprehensive game library of 700+ games, including popular titles like Minecraft, Roblox, and Among Us. Our platform offers a wide variety of games across different genres, ensuring there's something for everyone to enjoy.",
-  "version": "4.0.2",
+  "version": "4.0.3",
   "cache": {
     "type": "html",
     "description": "Game pages served as complete HTML responses"
   },
 
     "historyReplace": {
-    "enabled": true,
+    "enabled": false,
     "url": "https://google.com/"
   },
   "codes": [
