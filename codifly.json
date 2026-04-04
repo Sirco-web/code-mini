@@ -1,0 +1,21 @@
+{
+  "name": "Code Mini",
+  "github": "Sirco-web",
+  "email": "legal@gace.space",
+  "codeGen": "site",
+  "description": "Best Code line up we have made so far, with a comprehensive game library of 700+ games, including popular titles like Minecraft, Roblox, and Among Us. Our platform offers a wide variety of games across different genres, ensuring there's something for everyone to enjoy.",
+  "version": "3.0.0",
+  "cache": {
+    "type": "html",
+    "description": "Game pages served as complete HTML responses"
+  },
+  "codes": [
+    {
+      "code": "exam",
+      "name": "Example Game Hub",
+      "file": "index.html",
+      "type": "html",
+      "assets": ["Comprehensive game library with 700+ games"]
+    }
+  ]
+}

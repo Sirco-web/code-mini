@@ -144,7 +144,45 @@
             color: #333;
             margin-bottom: 20px;
             padding-bottom: 10px;
+            padding-right: 10px;
             border-bottom: 3px solid #667eea;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            user-select: none;
+            transition: opacity 0.2s;
+        }
+        
+        .section-title:hover {
+            opacity: 0.8;
+        }
+        
+        .section-toggle {
+            display: inline-block;
+            font-size: 16px;
+            transition: transform 0.3s ease;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .section-toggle.collapsed {
+            transform: rotate(-90deg);
+        }
+        
+        .section-content {
+            max-height: 10000px;
+            overflow: hidden;
+            transition: max-height 0.3s ease, opacity 0.3s ease;
+            opacity: 1;
+        }
+        
+        .section-content.collapsed {
+            max-height: 0;
+            opacity: 0;
         }
         
         .game-container {
@@ -235,6 +273,20 @@
             display: flex;
         }
         
+        #gameViewer:fullscreen {
+            top: 0;
+            left: 0;
+        }
+        
+        #gameViewer:fullscreen .viewer-header {
+            display: none;
+        }
+        
+        #gameFrame:fullscreen {
+            width: 100%;
+            height: 100%;
+        }
+        
         .viewer-header {
             background: #333;
             color: white;
@@ -243,6 +295,9 @@
             justify-content: space-between;
             align-items: center;
             gap: 20px;
+            flex-shrink: 0;
+            height: 60px;
+            transition: opacity 0.2s ease;
         }
         
         .viewer-title {
@@ -281,6 +336,7 @@
             width: 100%;
             display: block;
             background: #111;
+            height: calc(100% - 60px);
         }
 
         .fallback-message {
@@ -596,23 +652,31 @@
 
     <div class="content">
         <div class="section" id="recentSection">
-            <div class="section-title">⭐ Recently Played</div>
-            <div class="game-container" id="recentContainer"></div>
+            <div class="section-title" onclick="toggleSection('recentSection')"><span class="section-toggle">▼</span>⭐ Recently Played</div>
+            <div class="section-content" id="recentContent">
+                <div class="game-container" id="recentContainer"></div>
+            </div>
         </div>
 
         <div class="section" id="zippedSection">
-            <div class="section-title">📦 Zipped Games</div>
-            <div class="game-container" id="zippedContainer"></div>
+            <div class="section-title" onclick="toggleSection('zippedSection')"><span class="section-toggle">▼</span>📦 Zipped Games</div>
+            <div class="section-content" id="zippedContent">
+                <div class="game-container" id="zippedContainer"></div>
+            </div>
         </div>
 
         <div class="section" id="favoritesSection">
-            <div class="section-title">❤️ Favorites</div>
-            <div class="game-container" id="favContainer"></div>
+            <div class="section-title" onclick="toggleSection('favoritesSection')"><span class="section-toggle">▼</span>❤️ Favorites</div>
+            <div class="section-content" id="favoritesContent">
+                <div class="game-container" id="favContainer"></div>
+            </div>
         </div>
 
-        <div class="section">
-            <div class="section-title">🎮 All Games</div>
-            <div class="game-container" id="gamesContainer"></div>
+        <div class="section" id="allGamesSection">
+            <div class="section-title" onclick="toggleSection('allGamesSection')"><span class="section-toggle">▼</span>🎮 All Games</div>
+            <div class="section-content" id="allGamesContent">
+                <div class="game-container" id="gamesContainer"></div>
+            </div>
         </div>
     </div>
 
@@ -1900,6 +1964,78 @@ self.addEventListener('fetch', (event) => {
             return Array.from(assets);
         }
 
+        // Download external assets for zipped games if online
+        async function downloadZippedGameAssets(htmlContent, gameId, gameFolderPath, zipData, cache) {
+            try {
+                // Parse HTML to extract asset URLs
+                const doc = new DOMParser().parseFromString(htmlContent, 'text/html');
+                const assetUrls = new Set();
+                
+                // Extract script sources
+                doc.querySelectorAll('script[src]').forEach(el => {
+                    const src = el.getAttribute('src');
+                    if (src && !src.startsWith('data:') && !src.startsWith('blob:')) {
+                        assetUrls.add(src);
+                    }
+                });
+                
+                // Extract link refs
+                doc.querySelectorAll('link[href]').forEach(el => {
+                    const href = el.getAttribute('href');
+                    if (href && !href.startsWith('data:') && !href.startsWith('#')) {
+                        assetUrls.add(href);
+                    }
+                });
+                
+                // Extract img sources
+                doc.querySelectorAll('img[src]').forEach(el => {
+                    const src = el.getAttribute('src');
+                    if (src && !src.startsWith('data:')) {
+                        assetUrls.add(src);
+                    }
+                });
+                
+                // Extract video/audio sources
+                doc.querySelectorAll('source[src]').forEach(el => {
+                    const src = el.getAttribute('src');
+                    if (src && !src.startsWith('data:')) {
+                        assetUrls.add(src);
+                    }
+                });
+                
+                let downloadedCount = 0;
+                for (const url of assetUrls) {
+                    try {
+                        // Skip protocol-relative and if already cached
+                        if (url.startsWith('//') || url.startsWith('javascript:')) continue;
+                        
+                        // Check if already cached
+                        const cached = await cache.match(url);
+                        if (cached) {
+                            downloadedCount++;
+                            continue;
+                        }
+                        
+                        // Download with proxy fallback
+                        const response = await fetchAssetWithProxy(url);
+                        if (response && isValidResponse(response)) {
+                            await cache.put(url, response.clone());
+                            downloadedCount++;
+                            console.debug(`✓ Cached external asset for zipped game: ${url.split('/').pop()}`);
+                        }
+                    } catch (e) {
+                        console.debug(`⚠️  Could not cache asset: ${url}`, e);
+                    }
+                }
+                
+                if (downloadedCount > 0) {
+                    console.log(`📦 Cached ${downloadedCount} external assets for zipped game`);
+                }
+            } catch (e) {
+                console.warn('Error downloading zipped game assets:', e);
+            }
+        }
+
         // ZIP Import Functions
         function triggerZipImport() {
             document.getElementById('zipFileInput').click();
@@ -1952,13 +2088,15 @@ self.addEventListener('fetch', (event) => {
                     for (const filePath of gameFiles) {
                         try {
                             const file = zipData.files[filePath];
-                            const relativeUrl = filePath.substring(gameFolderPath.length + 1);
-                            const fileUrl = `${location.origin}/__code-mini-zip__/${gameId}/${relativeUrl}`;
+                            // Preserve full path structure and properly encode
+                            const pathParts = filePath.split('/').map(part => encodeURIComponent(part));
+                            const encodedPath = pathParts.join('/');
+                            const fileUrl = `${location.origin}/__code-mini-zip__/${gameId}/${encodedPath}`;
                             
                             const blob = await file.async('blob');
                             const response = new Response(blob, {
                                 headers: {
-                                    'Content-Type': getMimeType(relativeUrl)
+                                    'Content-Type': getMimeType(filePath)
                                 }
                             });
 
@@ -1982,6 +2120,20 @@ self.addEventListener('fetch', (event) => {
                     // Add to allGames if not already there
                     if (!allGames.find(g => g.id === gameId)) {
                         allGames.push(zipGame);
+                    }
+
+                    // If online, fetch all external assets referenced in the HTML/JS files
+                    if (navigator.onLine) {
+                        status.textContent = `Downloading assets for: ${gameName}...`;
+                        try {
+                            const indexFile = zipData.files[indexPath];
+                            if (indexFile) {
+                                const htmlContent = await indexFile.async('string');
+                                await downloadZippedGameAssets(htmlContent, gameId, gameFolderPath, zipData, cache);
+                            }
+                        } catch (e) {
+                            console.warn(`Could not prefetch assets for ${gameName}:`, e);
+                        }
                     }
 
                     importedGames.push({ name: gameName, fileCount });
@@ -2254,6 +2406,28 @@ self.addEventListener('fetch', (event) => {
                 }
             }
 
+            // For zipped games, load directly from Cache API instead of fetching
+            if (game.isZipped || game.id.startsWith('zipped_')) {
+                try {
+                    if ('caches' in window) {
+                        const cache = await caches.open(CACHE_NAME);
+                        const indexUrl = `${gameUrl}?t=${Date.now()}`;
+                        const cachedResponse = await cache.match(indexUrl.split('?')[0]);
+                        
+                        if (cachedResponse) {
+                            const rawHtml = await cachedResponse.text();
+                            const html = variant === 'viewer'
+                                ? prepareGameHtml(rawHtml, gameUrl, game)
+                                : prepareStandaloneHtml(rawHtml, gameUrl, game);
+                            return { html, gameUrl, source: 'cache' };
+                        }
+                    }
+                    throw new Error('Zipped game not found in cache');
+                } catch (e) {
+                    throw new Error(`Cannot load zipped game: ${e.message}`);
+                }
+            }
+
             const response = await fetch(`${gameUrl}?t=${Date.now()}`, { cache: 'no-store' });
             if (!response.ok) {
                 throw new Error(`Failed to fetch game HTML: ${response.status}`);
@@ -2261,7 +2435,7 @@ self.addEventListener('fetch', (event) => {
 
             const rawHtml = await response.text();
             const html = variant === 'viewer'
-                ? prepareGameHtml(rawHtml, gameUrl)
+                ? prepareGameHtml(rawHtml, gameUrl, game)
                 : prepareStandaloneHtml(rawHtml, gameUrl, game);
 
             if (settings.autoCacheOnPlay) {
@@ -2423,7 +2597,10 @@ self.addEventListener('fetch', (event) => {
         function getGameUrl(game) {
             // If it's a zipped game, return the cached URL
             if (game.isZipped || game.id.startsWith('zipped_')) {
-                return `${location.origin}/${game.folder}/index.html`;
+                // game.folder is like __code-mini-zip__/zipped_xxx
+                // Encode the folder path properly
+                const encodedFolder = game.folder.split('/').map(part => encodeURIComponent(part)).join('/');
+                return `${location.origin}/${encodedFolder}/index.html`;
             }
             const encodedFolder = game.folder.split('/').map(part => encodeURIComponent(part)).join('/');
             return `${GITHUB_CDN}/${encodedFolder}/index.html`;
@@ -2479,9 +2656,159 @@ self.addEventListener('fetch', (event) => {
             return sanitized;
         }
 
-        function prepareGameHtml(html, gameUrl) {
+        function rewriteZippedGameHtml(html, gameId) {
+            // For zipped games, first REMOVE tracker/ad scripts entirely
+            // These don't work offline and cause unnecessary network requests
+            
+            let rewritten = html;
+            let removedCount = 0;
+            
+            // Remove ALL script tags that contain tracker/analytics domains or paths
+            const trackerPatterns = [
+                // Scripts with gtag/js or analytics (any quote style or no quotes)
+                /<script[^>]*src\s*=\s*['"]*(?:https?:\/\/)?(?:\/\/)?[^"'>\s]*(?:gtag|analytics)[^"'>\s]*['"]*[^>]*><\/script>/gi,
+                // Google tag manager
+                /<script[^>]*src\s*=\s*['"]*https?:\/\/[^"'>]*googletagmanager[^"'>]*['"]*[^>]*><\/script>/gi,
+                // Google analytics
+                /<script[^>]*src\s*=\s*['"]*https?:\/\/[^"'>]*google-analytics[^"'>]*['"]*[^>]*><\/script>/gi,
+                // Protocol-relative gtag/analytics
+                /<script[^>]*src\s*=\s*['"]*\/\/[^"'>]*(?:gtag|analytics)[^"'>]*['"]*[^>]*><\/script>/gi,
+            ];
+            
+            for (const pattern of trackerPatterns) {
+                const matches = rewritten.match(pattern);
+                if (matches) {
+                    removedCount += matches.length;
+                    rewritten = rewritten.replace(pattern, '');
+                }
+            }
+            
+            // Ultra-aggressive: remove ANY remaining script tag with 'gtag' anywhere in it
+            rewritten = rewritten.replace(/<script[^>]*gtag[^>]*>[\s\S]*?<\/script>/gi, () => {
+                removedCount++;
+                return '';
+            });
+            
+            // Remove protocol-relative URLs that contain gtag or tracking
+            rewritten = rewritten.replace(/src\s*=\s*['"]*\/\/[^"'\s>]*(?:gtag|tracking|analytics)[^"'>\s]*['"]*(?=[\s>])/gi, () => {
+                removedCount++;
+                return '';
+            });
+            
+            // CRITICAL: Remove any src attribute pointing to //gtag/* or //analytics/*
+            // This handles quotes and no-quotes cases
+            rewritten = rewritten.replace(/\s+src\s*=\s*['"]*(?:\/\/|https?:\/\/[^\/]*\/)?(?:gtag|analytics|tracking)[^"'\s>]*['"]*(?=[\s>])/gi, () => {
+                removedCount++;
+                return '';
+            });
+            
+            // Remove inline gtag() call scripts entirely
+            rewritten = rewritten.replace(/<script[^>]*>[\s\S]*?gtag\s*\(/gi, '<script>/* gtag removed for offline */');
+            rewritten = rewritten.replace(/<\/script>[\s\S]*?gtag\s*\(/gi, '');
+            
+            if (removedCount > 0) {
+                console.log(`🧹 Removed ${removedCount} tracker/ad elements from zipped game HTML`);
+            }
+            
+            // Also remove any global tracker variable assignments and gtag calls
+            rewritten = rewritten.replace(/window\.dataLayer\s*=\s*window\.dataLayer\s*\|\|\s*\[\];?/gi, '');
+            rewritten = rewritten.replace(/gtag\s*\(\s*['"]config['"]\s*,\s*['"][^"']*['"]\s*\);?/gi, '');
+            rewritten = rewritten.replace(/gtag\s*\(\s*['"][^"']*['"][^)]*\);?/gi, '');
+            
+            // For zipped games, DON'T rewrite URLs
+            // The base tag (set by ensureBaseTag) handles relative paths correctly
+            // Absolute CDN URLs will get empty responses from the fetch handler (blocks ads)
+            
+            return rewritten;
+        }
+
+        function prepareGameHtml(html, gameUrl, game) {
+            // For zipped games, rewrite URLs to point to cached files BEFORE sanitizing
+            if (game && (game.isZipped || game.id.startsWith('zipped_'))) {
+                html = rewriteZippedGameHtml(html, game.id);
+            }
+            
             let prepared = ensureBaseTag(sanitizeGameHtml(html), gameUrl);
             const storageKey = `code-mini:ytgame:${gameUrl}`;
+            
+            // For zipped games, ensure fetch can serve from cache
+            const fetchHandlerScript = (game && (game.isZipped || game.id.startsWith('zipped_'))) ? `<script>
+                (function() {
+                    const originalFetch = window.fetch;
+                    const cacheName = 'code-mini-cache';
+                    const gameFolder = '${game.folder}';
+                    const gameId = '${game.id}';
+                    const isZipped = true;
+                    
+                    console.log('🎮 Zipped game fetch handler installed for:', gameFolder);
+                    
+                    // Block known trackers/ads completely for offline games
+                    const blockedDomains = [
+                        'googletagmanager.com', 'google-analytics.com', 'analytics.google.com',
+                        'doubleclick.net', 'ads.google.com', 'motorsnag.com'
+                    ];
+                    
+                    window.fetch = async function(...args) {
+                        const urlString = String(args[0]);
+                        
+                        // Block known trackers
+                        for (const domain of blockedDomains) {
+                            if (urlString.includes(domain)) {
+                                console.log('🔒 Blocked tracker:', domain);
+                                return new Response('', { status: 204 });
+                            }
+                        }
+                        
+                        // For zipped games, ONLY serve from cache - no network fallback
+                        try {
+                            if ('caches' in window) {
+                                const cache = await caches.open(cacheName);
+                                
+                                // Try exact match first
+                                let response = await cache.match(urlString);
+                                if (response) {
+                                    console.debug('✓ Cache hit:', urlString.split('/').pop());
+                                    return response.clone();
+                                }
+                                
+                                // Try matching by filename in zipped game folder
+                                const filename = urlString.split('/').pop()?.split('?')[0];
+                                if (filename) {
+                                    const keys = await cache.keys();
+                                    for (const request of keys) {
+                                        const requestUrl = request.url;
+                                        if (requestUrl.includes('/__code-mini-zip__/') && 
+                                            requestUrl.includes(gameId) && 
+                                            requestUrl.endsWith('/' + filename)) {
+                                            const cachedResponse = await cache.match(request);
+                                            if (cachedResponse) {
+                                                console.log('✓ Found in cache:', filename);
+                                                return cachedResponse.clone();
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('Cache lookup error:', e);
+                        }
+                        
+                        // File not in cache - for ZIPPED GAMES, don't try network
+                        // Just return empty/error response so game can continue
+                        const filename = urlString.split('/').pop()?.split('?')[0] || urlString;
+                        console.warn('⚠️  Not in cache, offline-only (zipped):', filename);
+                        
+                        // Return empty response for missing files
+                        // This prevents hard errors and let's game continue
+                        return new Response('', {
+                            status: 200,
+                            statusText: 'OK (offline stub)',
+                            headers: { 'Content-Type': 'text/plain' }
+                        });
+                    };
+                })();
+            <\/script>` : '';
+            
             const bootstrapScript = `<script>
                 if (typeof window.data === 'undefined') {
                     window.data = '';
@@ -2619,9 +2946,9 @@ self.addEventListener('fetch', (event) => {
             <\/script>`;
 
             if (/<head[^>]*>/i.test(prepared)) {
-                prepared = prepared.replace(/<head([^>]*)>/i, `<head$1>${bootstrapScript}`);
+                prepared = prepared.replace(/<head([^>]*)>/i, `<head$1>${fetchHandlerScript}${bootstrapScript}`);
             } else {
-                prepared = `${bootstrapScript}${prepared}`;
+                prepared = `${fetchHandlerScript}${bootstrapScript}${prepared}`;
             }
 
             return prepared;
@@ -2637,7 +2964,7 @@ self.addEventListener('fetch', (event) => {
         }
 
         function prepareStandaloneHtml(html, gameUrl, game) {
-            let prepared = prepareGameHtml(html, gameUrl);
+            let prepared = prepareGameHtml(html, gameUrl, game);
             const safeName = escapeHtml(game?.name || 'Game');
             const gameId = game?.id || '';
             const standaloneOverlay = `
@@ -2999,21 +3326,69 @@ self.addEventListener('fetch', (event) => {
 
         // Fullscreen toggle — fullscreen the IFRAME so the header bar is hidden
         function toggleFullscreen() {
-            const frame = document.getElementById('gameFrame');
+            const viewer = document.getElementById('gameViewer');
             if (document.fullscreenElement) {
                 document.exitFullscreen();
             } else {
-                frame.requestFullscreen().catch(() => {
-                    // Fallback: fullscreen the whole viewer if iframe fullscreen fails
-                    document.getElementById('gameViewer').requestFullscreen().catch(() => {});
+                viewer.requestFullscreen().catch(() => {
+                    console.warn('Fullscreen request failed');
                 });
             }
         }
 
         document.addEventListener('fullscreenchange', () => {
             const btn = document.getElementById('fsBtn');
-            if (btn) btn.textContent = document.fullscreenElement ? '⬜ Exit FS' : '🔲 Fullscreen';
+            const viewer = document.getElementById('gameViewer');
+            const header = document.querySelector('.viewer-header');
+            if (btn) {
+                btn.textContent = document.fullscreenElement ? '⬜ Exit FS' : '🔲 Fullscreen';
+            }
+            // The header is hidden via CSS :fullscreen selector
         });
+
+        // Toggle section collapse/expand
+        function toggleSection(sectionId) {
+            const section = document.getElementById(sectionId);
+            const contentId = sectionId.replace('Section', 'Content');
+            const content = document.getElementById(contentId);
+            const toggle = section.querySelector('.section-toggle');
+            
+            if (!content || !toggle) return;
+            
+            const isCollapsed = content.classList.contains('collapsed');
+            
+            if (isCollapsed) {
+                // Expand
+                content.classList.remove('collapsed');
+                toggle.classList.remove('collapsed');
+                localStorage.setItem(`section-${sectionId}`, 'expanded');
+            } else {
+                // Collapse
+                content.classList.add('collapsed');
+                toggle.classList.add('collapsed');
+                localStorage.setItem(`section-${sectionId}`, 'collapsed');
+            }
+        }
+
+        // Initialize sections from localStorage
+        function initializeSections() {
+            const sections = ['recentSection', 'zippedSection', 'favoritesSection', 'allGamesSection'];
+            sections.forEach(sectionId => {
+                const state = localStorage.getItem(`section-${sectionId}`);
+                const section = document.getElementById(sectionId);
+                const contentId = sectionId.replace('Section', 'Content');
+                const content = document.getElementById(contentId);
+                const toggle = section.querySelector('.section-toggle');
+                
+                if (state === 'collapsed') {
+                    content.classList.add('collapsed');
+                    toggle.classList.add('collapsed');
+                }
+            });
+        }
+
+        // Initialize sections on load
+        document.addEventListener('DOMContentLoaded', initializeSections);
 
         // Favorite toggle in viewer
         function toggleViewerFav() {
