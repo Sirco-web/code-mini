@@ -1730,11 +1730,12 @@ self.addEventListener('fetch', (event) => {
             // Check if this is a zipped game
             const displayName = isZippedGame(game.id) ? `zipped - ${game.name}` : game.name;
 
-            // Use numeric zone ID for cover, or game.id if already numeric
-            const numId = coverMap[game.name] || (/^\d+$/.test(game.id) ? game.id : null);
-            if (numId !== null && !isZippedGame(game.id)) {
+            // Load cover from GitHub repo using game folder
+            if (!isZippedGame(game.id) && game.folder) {
+                const encodedFolder = game.folder.split('/').map(part => encodeURIComponent(part)).join('/');
+                const coverUrl = `${GITHUB_CDN}/${encodedFolder}/cover.png`;
                 card.innerHTML = `
-                    <img class="card-cover" src="${COVERS_CDN}/${numId}.png" alt="" loading="lazy"
+                    <img class="card-cover" src="${coverUrl}" alt="" loading="lazy"
                          onerror="this.outerHTML='<div class=card-icon>🎯</div>'">
                     <div class="card-name">${displayName}</div>
                 `;
