@@ -2982,14 +2982,20 @@ self.addEventListener('fetch', (event) => {
                         right: 0;
                         z-index: 2147483647;
                         display: flex;
-                        justify-content: space-between;
+                        justify-content: center;
                         align-items: center;
                         gap: 20px;
                         padding: 15px 20px;
-                        background: #333;
+                        background: transparent;
                         color: #fff;
                         font: 600 16px/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                        box-shadow: none;
+                        transition: background 0.3s, padding 0.3s;
+                    }
+                    #codeMiniStandaloneHeader.expanded {
+                        background: #333;
                         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                        justify-content: space-between;
                     }
                     #codeMiniStandaloneTitle {
                         flex: 1;
@@ -2997,12 +3003,39 @@ self.addEventListener('fetch', (event) => {
                         overflow: hidden;
                         text-overflow: ellipsis;
                         white-space: nowrap;
+                        display: none;
+                    }
+                    #codeMiniStandaloneHeader.expanded #codeMiniStandaloneTitle {
+                        display: block;
+                    }
+                    #codeMiniStandaloneMenuBtn {
+                        background: rgba(102, 126, 234, 0.4);
+                        color: white;
+                        border: none;
+                        padding: 12px 16px;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        font: 600 16px/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                        transition: background 0.2s, opacity 0.2s;
+                        pointer-events: auto;
+                        opacity: 0.4;
+                    }
+                    #codeMiniStandaloneMenuBtn:hover {
+                        opacity: 0.6;
+                    }
+                    #codeMiniStandaloneHeader.expanded #codeMiniStandaloneMenuBtn {
+                        background: #667eea;
+                        opacity: 1;
+                        display: none;
                     }
                     #codeMiniStandaloneControls {
-                        display: flex;
+                        display: none;
                         align-items: center;
                         gap: 10px;
                         flex-wrap: wrap;
+                    }
+                    #codeMiniStandaloneHeader.expanded #codeMiniStandaloneControls {
+                        display: flex;
                     }
                     #codeMiniStandaloneControls button {
                         background: #667eea;
@@ -3037,19 +3070,20 @@ self.addEventListener('fetch', (event) => {
                         background: #c82333;
                     }
                     @media (max-width: 700px) {
-                        #codeMiniStandaloneHeader {
+                        #codeMiniStandaloneHeader.expanded {
                             padding: 12px;
                             gap: 12px;
                             align-items: flex-start;
                             flex-direction: column;
                         }
-                        #codeMiniStandaloneControls {
+                        #codeMiniStandaloneHeader.expanded #codeMiniStandaloneControls {
                             width: 100%;
                         }
                     }
                 </style>
                 <div id="codeMiniStandaloneHeader">
                     <div id="codeMiniStandaloneTitle">${safeName}</div>
+                    <button id="codeMiniStandaloneMenuBtn" type="button" onclick="return window.__codeMiniStandalone.toggleMenu(event)">⋮</button>
                     <div id="codeMiniStandaloneControls">
                         <button id="codeMiniStandaloneFav" type="button" onclick="return window.__codeMiniStandalone.toggleFav(event)">♡ Fav</button>
                         <button id="codeMiniStandaloneTab" type="button" onclick="return window.__codeMiniStandalone.openNewTab(event)">📑 New Tab</button>
@@ -3059,10 +3093,12 @@ self.addEventListener('fetch', (event) => {
                 </div>
                 <script>
                     (function() {
-                        const returnUrl = sessionStorage.getItem('codeMiniReturnUrl') || '/';
+                        // Use browser history to go back to Code Mini instead of saved URL
                         const blockedHosts = ['motorsnag.com'];
                         const gameId = ${JSON.stringify(gameId)};
                         const originalOpen = window.open ? window.open.bind(window) : null;
+                        const header = document.getElementById('codeMiniStandaloneHeader');
+                        let headerExpanded = false;
 
                         window.open = function(url) {
                             if (typeof url === 'string' && blockedHosts.some((host) => url.includes(host))) {
@@ -3095,7 +3131,27 @@ self.addEventListener('fetch', (event) => {
                         };
                         syncFav();
 
+                        const collapseMenu = () => {
+                            if (headerExpanded) {
+                                headerExpanded = false;
+                                header.classList.remove('expanded');
+                            }
+                        };
+
                         window.__codeMiniStandalone = {
+                            toggleMenu(event) {
+                                if (event && event.ctrlKey) {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    headerExpanded = !headerExpanded;
+                                    if (headerExpanded) {
+                                        header.classList.add('expanded');
+                                    } else {
+                                        header.classList.remove('expanded');
+                                    }
+                                }
+                                return false;
+                            },
                             toggleFav(event) {
                                 const favorites = readFavorites();
                                 const next = favorites.includes(gameId)
@@ -3103,6 +3159,7 @@ self.addEventListener('fetch', (event) => {
                                     : favorites.concat(gameId);
                                 localStorage.setItem('gn_favorites', JSON.stringify(next));
                                 syncFav();
+                                collapseMenu();
                                 return stop(event);
                             },
                             openNewTab(event) {
@@ -3112,6 +3169,7 @@ self.addEventListener('fetch', (event) => {
                                     clone.document.write(document.documentElement.outerHTML);
                                     clone.document.close();
                                 }
+                                collapseMenu();
                                 return stop(event);
                             },
                             toggleFullscreen(event) {
@@ -3120,13 +3178,21 @@ self.addEventListener('fetch', (event) => {
                                 } else {
                                     document.documentElement.requestFullscreen().catch(() => {});
                                 }
+                                collapseMenu();
                                 return stop(event);
                             },
                             close(event) {
-                                window.location.replace(returnUrl);
+                                window.history.back();
                                 return stop(event);
                             }
                         };
+
+                        // Collapse menu when clicking outside of header
+                        document.addEventListener('click', (e) => {
+                            if (!header.contains(e.target) && headerExpanded) {
+                                collapseMenu();
+                            }
+                        });
 
                         document.addEventListener('fullscreenchange', () => {
                             if (!fsButton) return;
@@ -3319,7 +3385,7 @@ self.addEventListener('fetch', (event) => {
         async function openInSameTab(game = currentGame) {
             currentGame = game || currentGame;
             if (!game) return;
-            sessionStorage.setItem('codeMiniReturnUrl', window.location.href);
+            // Use browser history to go back to Code Mini instead of saving URL
             try {
                 const { html } = await getPreparedLaunchHtml(game, 'standalone');
                 document.open();
