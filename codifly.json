@@ -11,7 +11,7 @@
   },
 
     "historyReplace": {
-    "enabled": true,
+    "enabled": false,
     "url": "https://google.com/"
   },
   "codes": [
