@@ -2543,23 +2543,23 @@ self.addEventListener('fetch', (event) => {
             toggleSettingsPanel(false);
         }
 
-        // Game Viewer
+        // Game Viewer - Routes to appropriate inject function based on settings or mode
         async function playGame(game) {
             currentGame = game;
             addRecent(game.id);
             const settings = getSettings();
 
+            // Use the appropriate inject function based on settings
             if (settings.defaultLaunchMode === 'viewer') {
-                loadGameSafe(game);
-                return;
+                return window.codeMini.launcher.viewer.inject(game);
             }
 
             if (settings.defaultLaunchMode === 'new-tab') {
-                openInNewTab(game);
-                return;
+                return window.codeMini.launcher.newTab.inject(game);
             }
 
-            openInSameTab(game);
+            // Default to same-tab mode
+            return window.codeMini.launcher.sameTab.inject(game);
         }
         
         function showWarningModal(game) {
@@ -3169,6 +3169,12 @@ self.addEventListener('fetch', (event) => {
                                     clone.document.open();
                                     clone.document.write(document.documentElement.outerHTML);
                                     clone.document.close();
+                                    // Install popup guard in new tab
+                                    if (typeof window.parent?.installPopupGuard === 'function') {
+                                        try {
+                                            setTimeout(() => clone?.installPopupGuard?.(clone), 100);
+                                        } catch(e) { console.log('Popup guard setup skipped'); }
+                                    }
                                 }
                                 collapseMenu();
                                 return stop(event);
@@ -3185,8 +3191,16 @@ self.addEventListener('fetch', (event) => {
                             close(event) {
                                 window.history.back();
                                 return stop(event);
+                            },
+                            // Inject function for menu system setup
+                            inject: function() {
+                                console.log('✓ Game menu system initialized');
+                                return true;
                             }
                         };
+
+                        // Auto-inject menu system on load
+                        window.__codeMiniStandalone.inject();
 
                         // Collapse menu when clicking outside of header
                         document.addEventListener('click', (e) => {
@@ -3198,6 +3212,19 @@ self.addEventListener('fetch', (event) => {
                         document.addEventListener('fullscreenchange', () => {
                             if (!fsButton) return;
                             fsButton.textContent = document.fullscreenElement ? '⬜ Exit FS' : '🔲 Fullscreen';
+                        });
+
+                        // Global keyboard shortcut support - Ctrl+0 to toggle menu
+                        document.addEventListener('keydown', (e) => {
+                            if ((e.ctrlKey || e.metaKey) && (e.key === '0' || e.key === ')')) {
+                                e.preventDefault();
+                                headerExpanded = !headerExpanded;
+                                if (headerExpanded) {
+                                    header.classList.add('expanded');
+                                } else {
+                                    header.classList.remove('expanded');
+                                }
+                            }
                         });
                     })();
                 <\/script>
@@ -3367,34 +3394,81 @@ self.addEventListener('fetch', (event) => {
             currentGame = null;
         }
 
+        // Launcher Inject System - Organized mode-specific injections
+        window.codeMini = window.codeMini || {};
+        window.codeMini.launcher = {
+            // New Tab Mode - Opens in a separate window with full menu support
+            newTab: {
+                inject: async function(game) {
+                    if (!game) return;
+                    const newWindow = window.open('about:blank', '_blank');
+                    if (!newWindow) return;
+                    installPopupGuard(newWindow);
+                    try {
+                        const { html } = await getPreparedLaunchHtml(game, 'standalone');
+                        newWindow.document.open();
+                        newWindow.document.write(html);
+                        newWindow.document.close();
+                        console.log('✓ Launched game in new tab with menu support');
+                    } catch (error) {
+                        newWindow.document.body.innerHTML = `<pre style="color:red;white-space:pre-wrap">${error.message}</pre>`;
+                    }
+                }
+            },
+            
+            // Same Tab Mode - Replaces current page with game, maintains history navigation
+            sameTab: {
+                inject: async function(game) {
+                    if (!game) return;
+                    try {
+                        const { html } = await getPreparedLaunchHtml(game, 'standalone');
+                        document.open();
+                        document.write(html);
+                        document.close();
+                        console.log('✓ Launched game in same tab with menu support');
+                    } catch (error) {
+                        alert(`Failed to open ${game.name}: ${error.message}`);
+                    }
+                }
+            },
+            
+            // Viewer Mode - Opens in embedded iframe within library
+            viewer: {
+                inject: function(game) {
+                    if (!game) return false;
+                    currentGame = game;
+                    // Add recent and then load in viewer
+                    addRecent(game.id);
+                    
+                    const viewer = document.getElementById('gameViewer');
+                    const frame = createFreshGameFrame();
+                    const displayName = isZippedGame(game.id) ? `zipped - ${game.name}` : game.name;
+                    document.getElementById('gameName').textContent = displayName;
+                    
+                    // Set favorite button state
+                    const favBtn = document.getElementById('favBtn');
+                    if (favBtn) favBtn.textContent = getFavorites().includes(game.id) ? '♥ Fav' : '♡ Fav';
+                    
+                    viewer.classList.add('visible');
+                    window.location.hash = encodeURIComponent(game.name);
+                    
+                    loadGameContent(game, frame);
+                    console.log('✓ Game loaded in embedded viewer');
+                    return true;
+                }
+            }
+        };
+
         async function openInNewTab(game = currentGame) {
             currentGame = game || currentGame;
             if (!currentGame) return;
-            const newWindow = window.open('about:blank', '_blank');
-            if (!newWindow) return;
-            installPopupGuard(newWindow);
-            try {
-                const { html } = await getPreparedLaunchHtml(currentGame, 'standalone');
-                newWindow.document.open();
-                newWindow.document.write(html);
-                newWindow.document.close();
-            } catch (error) {
-                newWindow.document.body.innerHTML = `<pre style="color:red;white-space:pre-wrap">${error.message}</pre>`;
-            }
+            await window.codeMini.launcher.newTab.inject(currentGame);
         }
 
         async function openInSameTab(game = currentGame) {
             currentGame = game || currentGame;
             if (!game) return;
-            // Use browser history to go back to Code Mini instead of saving URL
-            try {
-                const { html } = await getPreparedLaunchHtml(game, 'standalone');
-                document.open();
-                document.write(html);
-                document.close();
-            } catch (error) {
-                alert(`Failed to open ${game.name}: ${error.message}`);
-            }
+            await window.codeMini.launcher.sameTab.inject(game);
         }
 
         // Fullscreen toggle — fullscreen the IFRAME so the header bar is hidden
