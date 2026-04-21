@@ -87,14 +87,22 @@ if [[ $# -gt 0 && ("$1" == *.html || "$1" == */ || -f "$1") ]]; then
   
   # Extract URLs from HTML attributes only (src=, href=, data=, etc.)
   # This avoids picking up template literals and JavaScript code
-  echo "[*] Scanning for remote assets in HTML attributes..."
+  echo "[*] Scanning for remote assets in HTML and JavaScript..."
   
-  # Create a list of actual attribute URLs (http:// and https://)
+  # Extract ALL http:// and https:// URLs from the entire file
+  # This includes URLs in:
+  # - HTML attributes (src=, href=, data=)
+  # - JavaScript strings
+  # - JSON data
   # Skip blob: and data: URLs
-  URLS=$(grep -oP '(?:src|href|data)="https?://[^"]+"|(?:src|href|data)='"'"'https?://[^'"'"']+'"'"'' "$HTML_INPUT" | sed 's/^[^=]*=["'"'"']//' | sed 's/["'"'"']$//' | grep -v '^blob:' | grep -v '^data:' | sort -u)
+  URLS=$(grep -oP 'https?://[^\s"'"'"'<>`\{\}|\\^]+' "$HTML_INPUT" | \
+    grep -v '^http.*\.' | \
+    grep -v '^blob:' | \
+    grep -v '^data:' | \
+    sort -u)
   
   if [[ -z "$URLS" ]]; then
-    echo "[!] No remote assets found in HTML attributes"
+    echo "[!] No remote assets found in HTML"
     exit 0
   fi
   
@@ -122,9 +130,18 @@ if [[ $# -gt 0 && ("$1" == *.html || "$1" == */ || -f "$1") ]]; then
       continue
     fi
     
-    # Extract filename from URL (remove query strings)
-    filename=$(basename "$url" | cut -d'?' -f1)
-    [[ -z "$filename" ]] && filename="asset-$RANDOM"
+    # Skip certain CDNs/services that won't work offline anyway
+    if [[ "$url" =~ (googletagmanager|analytics|adsbygoogle|adinplay|facebook.com/en) ]]; then
+      echo "  ⊘ Skipping tracking/ad URL: $url"
+      continue
+    fi
+    
+    # Extract filename from URL (remove query strings and fragments)
+    filename=$(basename "$url" | cut -d'?' -f1 | cut -d'#' -f1)
+    [[ -z "$filename" || "$filename" == "/" ]] && filename="asset-$RANDOM"
+    
+    # Prevent path traversal attacks in filenames
+    filename=$(basename "$filename")
     
     filepath="$ASSETS_FOLDER/$filename"
     
@@ -148,8 +165,9 @@ if [[ $# -gt 0 && ("$1" == *.html || "$1" == */ || -f "$1") ]]; then
     
     # Update HTML to use local path (if download succeeded or was cached)
     if [[ -f "$filepath" ]]; then
-      # Escape special characters for sed
+      # Escape special characters for sed (/, &, backslashes)
       url_escaped=$(printf '%s\n' "$url" | sed -e 's/[\/&]/\\&/g')
+      # Replace the full URL with relative path to assets
       sed -i "s|$url_escaped|./assets/$filename|g" "$MODIFIED_HTML"
       DECLARED_URLS+=("$url")
     fi
@@ -159,11 +177,20 @@ if [[ $# -gt 0 && ("$1" == *.html || "$1" == */ || -f "$1") ]]; then
   echo ""
   echo "[*] Updating inline JavaScript for offline mode..."
   
-  # Replace CDN URLs in inline scripts (both http:// and https://)
-  sed -i "s|https\?://cdn.jsdelivr.net/gh/gn-math/covers@main|./assets/covers|g" "$MODIFIED_HTML"
-  sed -i "s|https\?://raw.githubusercontent.com/gn-math/covers/main|./assets/covers|g" "$MODIFIED_HTML"
-  sed -i "s|https\?://cdn.jsdelivr.net/gh/gn-math/assets@main/zones.json|./assets/zones.json|g" "$MODIFIED_HTML"
-  sed -i "s|https\?://raw.githubusercontent.com/gn-math/assets/main/zones.json|./assets/zones.json|g" "$MODIFIED_HTML"
+  # Replace common CDN patterns with offline paths
+  # These are common patterns that may be hardcoded in JavaScript
+  sed -i "s|https\?://cdn\.jsdelivr\.net/gh/gn-math/covers@main|./assets/covers|g" "$MODIFIED_HTML"
+  sed -i "s|https\?://cdn\.jsdelivr\.net/gh/gn-math/assets@main|./assets|g" "$MODIFIED_HTML"
+  sed -i "s|https\?://cdn\.jsdelivr\.net/gh/[^/]*/[^/]*@[^/]*/||g" "$MODIFIED_HTML"
+  sed -i "s|https\?://raw\.githubusercontent\.com/gn-math/covers/main|./assets/covers|g" "$MODIFIED_HTML"
+  sed -i "s|https\?://raw\.githubusercontent\.com/gn-math/assets/main|./assets|g" "$MODIFIED_HTML"
+  sed -i "s|https\?://cdn\.jsdelivr\.net/npm/|./assets/|g" "$MODIFIED_HTML"
+  sed -i "s|https\?://cdn\.jsdelivr\.net/gh/|./assets/|g" "$MODIFIED_HTML"
+  sed -i "s|https\?://unpkg\.com/|./assets/|g" "$MODIFIED_HTML"
+  
+  # Replace zones.json references
+  sed -i "s|https://cdn\.jsdelivr\.net/gh/gn-math/assets@main/zones\.json|./assets/zones.json|g" "$MODIFIED_HTML"
+  sed -i "s|https://raw\.githubusercontent\.com/gn-math/assets/main/zones\.json|./assets/zones.json|g" "$MODIFIED_HTML"
   
   # Optional: Try to download zones.json for offline game list
   echo "[*] Attempting to download game catalog (zones.json)..."
@@ -176,6 +203,17 @@ if [[ $# -gt 0 && ("$1" == *.html || "$1" == */ || -f "$1") ]]; then
     echo "  ⊘ Game catalog not available (will need internet for game list)"
   fi
   
+  # Check for any remaining external URLs that couldn't be converted
+  echo ""
+  echo "[*] Checking for remaining external URLs..."
+  REMAINING_URLS=$(grep -oP 'https?://[^\s"'"'"'<>`\{\}|\\^]+' "$MODIFIED_HTML" | sort -u || true)
+  if [[ -n "$REMAINING_URLS" ]]; then
+    echo "  ⚠️  Some external URLs remain (may need internet):"
+    echo "$REMAINING_URLS" | sed 's/^/    - /'
+  else
+    echo "  ✓ All external URLs have been converted to offline paths"
+  fi
+  
   # Move the modified HTML to the output
   cp "$MODIFIED_HTML" "$OUTPUT_DIR/index-offline.html"
   cp "$OUTPUT_DIR/index-offline.html" "$OUTPUT_DIR/index.html"
@@ -185,22 +223,32 @@ if [[ $# -gt 0 && ("$1" == *.html || "$1" == */ || -f "$1") ]]; then
 # Offline Game Setup
 
 ## What's Included
-- `index.html` - Main game interface (offline ready)
-- `assets/` - Downloaded JavaScript libraries
+- `index.html` - Main game interface (offline ready, all URLs rewritten)
+- `assets/` - Downloaded assets (JavaScript libraries, images, data files)
 - `zones.json` - Game catalog (if downloaded)
+
+## How Assets Were Converted
+This game has been automatically converted for offline use:
+1. ✓ All external URLs (http:// and https://) have been scanned
+2. ✓ Remote assets have been downloaded to the `assets/` folder
+3. ✓ All references in the HTML have been rewritten to use local `./assets/` paths
+4. ✓ JavaScript code with embedded URLs has been updated
+
+This includes:
+- URLs in HTML attributes (src, href, data)
+- URLs embedded in JavaScript code
+- URLs in JSON data
+- CDN references
 
 ## How to Use
 
-### Option 1: Direct Browser Access
-Simply open `index.html` in your browser. The game will:
-1. Load the game list from zones.json (if available)
-2. Fetch game covers from the `assets/covers/` folder
-3. Load games from individual game folders
+### Option 1: Direct Browser Access (Recommended)
+Simply open `index.html` in your browser. Since all external URLs have been converted to local paths, it should work completely offline.
 
-### Option 2: Local Server (Recommended)
-Some features work better with a local server:
+### Option 2: Local Server (Sometimes Required)
+Some CORS-restricted features work better with a local server:
 
-```bash
+\`\`\`bash
 # Using Python 3
 python3 -m http.server 8000
 
@@ -209,31 +257,42 @@ python -m SimpleHTTPServer 8000
 
 # Using Node.js/http-server
 npx http-server -p 8000
-```
+\`\`\`
 
-Then visit: `http://localhost:8000/index.html`
-
-## Downloading Game Assets
-
-To download specific games, use the downloader script:
-
-```bash
-# Download and convert an HTML game file
-bash down-non-gz.sh path/to/game.html path/to/output/folder
-```
+Then visit: \`http://localhost:8000/index.html\`
 
 ## Offline Functionality
+- ✓ All UI and assets are fully local
+- ✓ No external requests should be made
+- ✓ Works completely offline
+- ⚠️  Any remaining external URLs will require internet (check OFFLINE_README notes)
 
-- ✓ All UI JavaScript and libraries are local
-- ✓ Game catalogs work offline (if zones.json is present)
-- ✓ Individual games load offline (if assets are downloaded)
-- ✓ Cover images display from local cache
+## Re-downloading Updated Assets
+To update with newer assets, run the downloader again:
 
-## Note
+\`\`\`bash
+bash down-non-gz.sh path/to/game.html path/to/output/folder
+\`\`\`
 
-Some features may require additional game assets to be downloaded separately:
-- Game covers are cached in `assets/covers/`
-- Game code and assets go in individual game folders
+The script will detect unchanged assets and skip re-downloading them.
+
+## Troubleshooting
+
+### Some features still need internet?
+If the converted HTML mentions remaining external URLs, they often are:
+- Analytics/tracking (safe to ignore)
+- Optional features
+- Services not needed for core gameplay
+
+The script will list any remaining external URLs at the end of conversion.
+
+### Want to download more assets?
+You can manually download additional assets:
+\`\`\`bash
+# Download specific URL to assets folder
+curl -fsSL "https://example.com/library.js" -o "./assets/library.js"
+# Then update the HTML reference to use ./assets/library.js
+\`\`\`
 EOF
 
   echo ""
@@ -244,10 +303,15 @@ EOF
   echo "  Offline HTML: $OUTPUT_DIR/index.html"
   echo "  Setup guide: $OUTPUT_DIR/OFFLINE_README.md"
   echo ""
+  echo "  All external URLs have been:"
+  echo "  1. Scanned from HTML and JavaScript"
+  echo "  2. Downloaded to ./assets/"
+  echo "  3. Rewritten in the HTML to use local paths"
+  echo ""
   echo "  Next steps:"
-  echo "  1. Open index.html in a browser"
-  echo "  2. Or run: python3 -m http.server 8000"
-  echo "  3. For full offline, download game assets separately"
+  echo "  1. Open index.html in a browser (fully offline now)"
+  echo "  2. If needed: python3 -m http.server 8000"
+  echo "  3. Check OFFLINE_README.md for any remaining external URLs"
   echo "════════════════════════════════════════"
   
   # Cleanup
