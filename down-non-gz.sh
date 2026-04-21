@@ -567,6 +567,64 @@ process_game() {
 
   fi
 
+  # ── Extract and download ALL http/https URLs from the HTML ──
+  echo "    ↳ scanning for external assets in HTML..."
+  local ASSETS_SUBFOLDER="$game_dir/assets"
+  mkdir -p "$ASSETS_SUBFOLDER"
+  
+  # Extract ALL http:// and https:// URLs from the HTML file
+  local GAME_URLS=$(grep -oP 'https?://[^\s"'"'"'<>`\{\}|\\^]+' "$file" | \
+    grep -v '^blob:' | \
+    grep -v '^data:' | \
+    sort -u)
+  
+  if [[ -n "$GAME_URLS" ]]; then
+    echo "    ↳ found $(echo "$GAME_URLS" | wc -l) unique URLs"
+    local MODIFIED_HTML="$file.offline"
+    cp "$file" "$MODIFIED_HTML"
+    
+    # Download each URL and rewrite references
+    while IFS= read -r url; do
+      [[ -z "$url" ]] && continue
+      
+      # Skip template variables
+      if [[ "$url" =~ \$\{ ]]; then
+        continue
+      fi
+      
+      # Skip tracking/ads
+      if [[ "$url" =~ (googletagmanager|analytics|adsbygoogle|adinplay|facebook.com/en) ]]; then
+        continue
+      fi
+      
+      # Extract filename
+      local filename=$(basename "$url" | cut -d'?' -f1 | cut -d'#' -f1)
+      [[ -z "$filename" || "$filename" == "/" ]] && filename="asset-$RANDOM"
+      filename=$(basename "$filename")
+      
+      local filepath="$ASSETS_SUBFOLDER/$filename"
+      
+      # Download if not exists
+      if [[ ! -f "$filepath" ]]; then
+        if curl -fsSL --connect-timeout 5 --max-time 10 "$url" -o "$filepath" 2>/dev/null; then
+          :  # Successfully downloaded
+        else
+          rm -f "$filepath"
+          continue
+        fi
+      fi
+      
+      # Rewrite URL in HTML
+      if [[ -f "$filepath" ]]; then
+        url_escaped=$(printf '%s\n' "$url" | sed -e 's/[\/&]/\\&/g')
+        sed -i "s|$url_escaped|./assets/$filename|g" "$MODIFIED_HTML"
+      fi
+    done <<< "$GAME_URLS"
+    
+    # Replace the original with the modified version
+    mv "$MODIFIED_HTML" "$file"
+  fi
+
   # ── Download cover image ───────────────────────────────────
   if [[ ! -f "$game_dir/cover.png" ]]; then
     curl -fsSL "$COVERS_CDN/${id}.png" -o "$game_dir/cover.png" 2>/dev/null || true
