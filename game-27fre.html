@@ -483,6 +483,14 @@
             background: #c2185b;
         }
 
+        .viewer-controls button.gamebar-btn {
+            background: #667eea;
+        }
+
+        .viewer-controls button.gamebar-btn:hover {
+            background: #764ba2;
+        }
+
         #clearCacheLink {
             color: rgba(255,255,255,0.6);
             font-size: 11px;
@@ -695,6 +703,7 @@
                 <button onclick="openInSameTab()">🧭 Same Tab</button>
                 <button onclick="openInNewTab()">📑 New Tab</button>
                 <button class="fullscreen-btn" id="fsBtn" onclick="toggleFullscreen()">🔲 Fullscreen</button>
+                <button class="gamebar-btn" id="gamebarBtn" onclick="returnToGameBar()">🎮 Game Bar</button>
                 <button class="close" onclick="closeViewer()">✕ Close</button>
             </div>
         </div>
@@ -3471,6 +3480,33 @@ self.addEventListener('fetch', (event) => {
                     viewer.classList.remove('visible');
                     currentGame = null;
                 });
+        }
+
+        function returnToGameBar() {
+            // Return to the library/game bar by hiding the viewer
+            const viewer = document.getElementById('gameViewer');
+            const frame = document.getElementById('gameFrame');
+            
+            try {
+                // Stop any running scripts in the iframe
+                if (frame.contentWindow) {
+                    frame.contentWindow.stop();
+                }
+            } catch (e) {
+                console.warn('Could not stop iframe:', e);
+            }
+            
+            // Clear the iframe src to properly unload it
+            frame.src = 'about:blank';
+            
+            // Hide the viewer
+            viewer.classList.remove('visible');
+            
+            // Clear current game
+            currentGame = null;
+            
+            // Scroll back to top
+            window.scrollTo(0, 0);
         }
 
         // Launcher Inject System - Organized mode-specific injections
