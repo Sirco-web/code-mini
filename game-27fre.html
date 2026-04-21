@@ -3018,8 +3018,15 @@ self.addEventListener('fetch', (event) => {
                         cursor: pointer;
                         font: 600 16px/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                         transition: background 0.2s, opacity 0.2s;
-                        pointer-events: auto;
+                        pointer-events: none;
                         opacity: 0.4;
+                        user-select: none;
+                        -webkit-user-select: none;
+                        -moz-user-select: none;
+                        -ms-user-select: none;
+                    }
+                    #codeMiniStandaloneMenuBtn.ctrl-active {
+                        pointer-events: auto;
                     }
                     #codeMiniStandaloneMenuBtn:hover {
                         opacity: 0.6;
@@ -3119,11 +3126,16 @@ self.addEventListener('fetch', (event) => {
 
                         const favButton = document.getElementById('codeMiniStandaloneFav');
                         const fsButton = document.getElementById('codeMiniStandaloneFs');
+                        const menuBtn = document.getElementById('codeMiniStandaloneMenuBtn');
+                        let ctrlPressed = false;
                         const stop = (event) => {
+                            console.log('🟠 [stop] Called with event:', !!event);
                             if (event) {
+                                console.log('🟠 [stop] Preventing default and stopping propagation');
                                 event.preventDefault();
                                 event.stopPropagation();
                             }
+                            console.log('🟠 [stop] Returning false');
                             return false;
                         };
                         const syncFav = () => {
@@ -3189,8 +3201,55 @@ self.addEventListener('fetch', (event) => {
                                 return stop(event);
                             },
                             close(event) {
-                                window.history.back();
-                                return stop(event);
+                                console.log('🔴 [close] Close button clicked');
+                                console.log('🔴 [close] Event:', event);
+                                
+                                // Check sessionStorage state
+                                const fromLibrary = sessionStorage.getItem('codeMini_fromLibrary');
+                                const libraryUrl = sessionStorage.getItem('codeMini_libraryUrl');
+                                
+                                console.log('🔴 [close] SessionStorage state:', {
+                                    fromLibrary: fromLibrary,
+                                    hasUrl: !!libraryUrl,
+                                    urlLength: libraryUrl?.length || 0,
+                                    urlPreview: libraryUrl?.substring(0, 100) || 'NONE'
+                                });
+                                
+                                // Check if we came from the library page
+                                if (window.sessionStorage && sessionStorage.getItem('codeMini_fromLibrary') === 'true') {
+                                    console.log('✅ [close] From library flag is TRUE');
+                                    try {
+                                        const libraryUrl = sessionStorage.getItem('codeMini_libraryUrl');
+                                        console.log('📍 [close] Retrieved library URL:', libraryUrl?.substring(0, 100));
+                                        
+                                        // Clear the flags
+                                        sessionStorage.removeItem('codeMini_fromLibrary');
+                                        sessionStorage.removeItem('codeMini_libraryUrl');
+                                        console.log('📍 [close] Cleared sessionStorage flags');
+                                        
+                                        if (libraryUrl) {
+                                            console.log('🟢 [close] Have valid URL, navigating to:', libraryUrl.substring(0, 100));
+                                            // Navigate back to library
+                                            window.location.href = libraryUrl;
+                                            console.log('✓ [close] Navigation initiated');
+                                            return stop(event);
+                                        } else {
+                                            console.error('❌ [close] Library URL is empty/null after retrieval');
+                                            return stop(event);
+                                        }
+                                    } catch (e) {
+                                        console.error('❌ [close] Exception during restore:', e.message, e.stack);
+                                        return stop(event);
+                                    }
+                                } else {
+                                    console.error('❌ [close] From library flag is NOT TRUE. Current value:', fromLibrary);
+                                    console.error('❌ [close] sessionStorage contents:', {
+                                        keys: Object.keys(sessionStorage),
+                                        codeMini_fromLibrary: sessionStorage.getItem('codeMini_fromLibrary'),
+                                        codeMini_libraryUrl: sessionStorage.getItem('codeMini_libraryUrl')?.substring(0, 50) || 'NONE'
+                                    });
+                                    return stop(event);
+                                }
                             },
                             // Inject function for menu system setup
                             inject: function() {
@@ -3216,6 +3275,13 @@ self.addEventListener('fetch', (event) => {
 
                         // Global keyboard shortcut support - Ctrl+0 to toggle menu
                         document.addEventListener('keydown', (e) => {
+                            // Track Ctrl key state to enable menu button clicks
+                            if (e.ctrlKey || e.metaKey) {
+                                ctrlPressed = true;
+                                if (menuBtn) {
+                                    menuBtn.classList.add('ctrl-active');
+                                }
+                            }
                             if ((e.ctrlKey || e.metaKey) && (e.key === '0' || e.key === ')')) {
                                 e.preventDefault();
                                 headerExpanded = !headerExpanded;
@@ -3223,6 +3289,15 @@ self.addEventListener('fetch', (event) => {
                                     header.classList.add('expanded');
                                 } else {
                                     header.classList.remove('expanded');
+                                }
+                            }
+                        });
+                        document.addEventListener('keyup', (e) => {
+                            // Disable menu button clicks when Ctrl is released
+                            if (!e.ctrlKey && !e.metaKey) {
+                                ctrlPressed = false;
+                                if (menuBtn) {
+                                    menuBtn.classList.remove('ctrl-active');
                                 }
                             }
                         });
@@ -3419,14 +3494,39 @@ self.addEventListener('fetch', (event) => {
             // Same Tab Mode - Replaces current page with game, maintains history navigation
             sameTab: {
                 inject: async function(game) {
-                    if (!game) return;
+                    if (!game) {
+                        console.error('❌ [sameTab] No game provided');
+                        return;
+                    }
+                    console.log('📍 [sameTab] Starting injection for game:', game.name, 'ID:', game.id);
                     try {
+                        // Save library page indicator to session  before loading game
+                        const libraryUrl = window.location.href;
+                        console.log('📍 [sameTab] Current URL being saved:', libraryUrl);
+                        console.log('📍 [sameTab] URL length:', libraryUrl.length);
+                        
+                        sessionStorage.setItem('codeMini_fromLibrary', 'true');
+                        sessionStorage.setItem('codeMini_libraryUrl', libraryUrl);
+                        
+                        console.log('✓ [sameTab] Library state saved');
+                        console.log('✓ [sameTab] Verify sessionStorage:', {
+                            fromLibrary: sessionStorage.getItem('codeMini_fromLibrary'),
+                            urlLength: sessionStorage.getItem('codeMini_libraryUrl')?.length || 0
+                        });
+                        
                         const { html } = await getPreparedLaunchHtml(game, 'standalone');
+                        console.log('📍 [sameTab] Got game HTML, length:', html.length);
+                        
                         document.open();
+                        console.log('📍 [sameTab] Document opened');
+                        
                         document.write(html);
+                        console.log('📍 [sameTab] Document written');
+                        
                         document.close();
-                        console.log('✓ Launched game in same tab with menu support');
+                        console.log('✓ [sameTab] Launched game in same tab with menu support');
                     } catch (error) {
+                        console.error('❌ [sameTab] Error:', error.message, error);
                         alert(`Failed to open ${game.name}: ${error.message}`);
                     }
                 }
@@ -3466,8 +3566,13 @@ self.addEventListener('fetch', (event) => {
         }
 
         async function openInSameTab(game = currentGame) {
+            console.log('🟡 [openInSameTab] Called with game:', game?.name || 'NONE', 'ID:', game?.id || 'NONE');
             currentGame = game || currentGame;
-            if (!game) return;
+            if (!game) {
+                console.error('❌ [openInSameTab] No game provided and no currentGame set');
+                return;
+            }
+            console.log('🟡 [openInSameTab] Calling sameTab.inject');
             await window.codeMini.launcher.sameTab.inject(game);
         }
 

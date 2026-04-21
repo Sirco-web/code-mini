@@ -47,10 +47,10 @@ if [[ "${1:-}" == "--check-urls" ]]; then
     fi
   }
   
-  curl_test "https://cdn.jsdelivr.net/gh/gn-math/assets@main/zones.json" "zones.json"
-  curl_test "https://cdn.jsdelivr.net/gh/gn-math/html@main/697.html" "HTML base (sample)"
+  curl_test "https://raw.githubusercontent.com/gn-math/assets/main/zones.json" "zones.json (GitHub Raw)"
+  curl_test "https://raw.githubusercontent.com/gn-math/html/main/697.html" "HTML base (sample)"
   curl_test "https://github.com/gn-math/assets.git" "Assets repo"
-  curl_test "https://cdn.jsdelivr.net/gh/gn-math/covers@main/697.png" "Covers CDN (sample)"
+  curl_test "https://raw.githubusercontent.com/gn-math/covers/main/697.png" "Covers (GitHub Raw)"
   
   echo ""
   echo "[*] URL check complete. If any failed, check your internet or repo URLs."
@@ -161,14 +161,17 @@ if [[ $# -gt 0 && ("$1" == *.html || "$1" == */ || -f "$1") ]]; then
   
   # Replace CDN URLs in inline scripts (both http:// and https://)
   sed -i "s|https\?://cdn.jsdelivr.net/gh/gn-math/covers@main|./assets/covers|g" "$MODIFIED_HTML"
+  sed -i "s|https\?://raw.githubusercontent.com/gn-math/covers/main|./assets/covers|g" "$MODIFIED_HTML"
   sed -i "s|https\?://cdn.jsdelivr.net/gh/gn-math/assets@main/zones.json|./assets/zones.json|g" "$MODIFIED_HTML"
+  sed -i "s|https\?://raw.githubusercontent.com/gn-math/assets/main/zones.json|./assets/zones.json|g" "$MODIFIED_HTML"
   
   # Optional: Try to download zones.json for offline game list
   echo "[*] Attempting to download game catalog (zones.json)..."
-  if curl -fsSL --connect-timeout 5 "https://cdn.jsdelivr.net/gh/gn-math/assets@main/zones.json" -o "$ASSETS_FOLDER/zones.json" 2>/dev/null; then
+  if curl -fsSL --connect-timeout 5 "$ZONES_JSON" -o "$ASSETS_FOLDER/zones.json" 2>/dev/null; then
     echo "  ✓ Game catalog downloaded"
     DOWNLOADED=$((DOWNLOADED + 1))
     sed -i "s|https://cdn.jsdelivr.net/gh/gn-math/assets@main/zones.json|./assets/zones.json|g" "$MODIFIED_HTML"
+    sed -i "s|https://raw.githubusercontent.com/gn-math/assets/main/zones.json|./assets/zones.json|g" "$MODIFIED_HTML"
   else
     echo "  ⊘ Game catalog not available (will need internet for game list)"
   fi
@@ -265,10 +268,11 @@ if [[ $EUID -eq 0 ]]; then
   echo "WARNING: Running as root. File ownership will be set to root."
 fi
 
-ZONES_JSON="https://cdn.jsdelivr.net/gh/gn-math/assets@main/zones.json"
-HTML_BASE="https://cdn.jsdelivr.net/gh/gn-math/html@main"
+# Use direct GitHub raw URLs to bypass JSDelivr CDN 403 block
+ZONES_JSON="https://raw.githubusercontent.com/gn-math/assets/main/zones.json"
+HTML_BASE="https://raw.githubusercontent.com/gn-math/html/main"
 ASSETS_REPO="https://github.com/gn-math/assets.git"
-COVERS_CDN="https://cdn.jsdelivr.net/gh/gn-math/covers@main"
+COVERS_CDN="https://raw.githubusercontent.com/gn-math/covers/main"
 
 OUT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MANIFEST="$OUT_DIR/games.json"
@@ -303,8 +307,8 @@ echo "[✓] All dependencies available: curl, git, jq"
 echo ""
 echo "[*] Fetching zones.json from $ZONES_JSON…"
 
-# Attempt with verbose diagnostics
-HTTP_CODE=$(curl -fsSL -w "%{http_code}" -o "$TMP_JSON" "$ZONES_JSON" 2>&1)
+# Attempt with verbose diagnostics (don't fail on HTTP error, check code instead)
+HTTP_CODE=$(curl -sL -w "%{http_code}" -o "$TMP_JSON" "$ZONES_JSON" 2>/dev/null || echo "000")
 
 if [[ "$HTTP_CODE" != "200" ]]; then
   echo "[!] ERROR: HTTP $HTTP_CODE when fetching zones.json"
@@ -346,8 +350,8 @@ echo ""
 echo "[*] Sparse-cloning assets repo…"
 echo "    Repo: $ASSETS_REPO"
 
-# Try to clone - with error checking
-if ! git clone --filter=blob:none --depth 1 --sparse "$ASSETS_REPO" "$ASSETS_DIR" 2>&1 | grep -v '^$' | tail -5; then
+# Try to clone - with error checking (don't fail immediately on error)
+if ! git clone --filter=blob:none --depth 1 --sparse "$ASSETS_REPO" "$ASSETS_DIR" 2>&1 | tail -10; then
   echo "[!] ERROR: Failed to clone repository"
   echo "[!] URL: $ASSETS_REPO"
   echo ""
@@ -384,8 +388,9 @@ cd "$OUT_DIR" || exit 1
 
 # Write asset hashes to a file so workers can read it (assoc arrays can't export)
 ASSET_HASH_FILE="$JOBS_DIR/_asset_hashes"
+declare -A ASSET_TREE_HASH
 for aid in $ASSET_IDS; do
-  echo "$aid ${ASSET_TREE_HASH[$aid]}"
+  echo "$aid"
 done > "$ASSET_HASH_FILE"
 
 # ============================================================
@@ -413,8 +418,9 @@ process_game() {
   name=$(echo "$entry" | jq -r '.name // empty')
   raw_url=$(echo "$entry" | jq -r '.url // empty')
 
-  # Skip junk
+  # Skip junk and COMMENTS game
   [[ -z "$id" || "$id" == "null" || "$id" == "-1" ]] && return 0
+  [[ "$name" =~ ^[[:space:]]*COMMENTS[[:space:]]*$ ]] && return 0
 
   # Sanitised folder name
   local safe_name folder_name game_dir
