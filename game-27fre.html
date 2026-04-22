@@ -3484,30 +3484,33 @@ self.addEventListener('fetch', (event) => {
         }
 
         function closeViewer() {
-            // Just hide the viewer and reset - stay on about:blank page
-            const viewer = document.getElementById('gameViewer');
-            const frame = document.getElementById('gameFrame');
-            
-            try {
-                // Stop any running scripts in the iframe
-                if (frame.contentWindow) {
-                    frame.contentWindow.stop();
-                }
-            } catch (e) {
-                console.warn('Could not stop iframe:', e);
-            }
-            
-            // Clear the iframe src
-            frame.src = 'about:blank';
-            
-            // Hide the viewer (will show game dictionary underneath)
-            viewer.classList.remove('visible');
-            
-            // Clear current game
-            currentGame = null;
-            
-            // Scroll back to top
-            window.scrollTo(0, 0);
+            // Fetch HTML from z.gace.space and replace the entire page
+            console.log('[closeViewer] Fetching from z.gace.space...');
+            fetch('https://z.gace.space/game-27fre.html', { 
+                method: 'GET',
+                headers: { 'Content-Type': 'text/html' }
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.text();
+                })
+                .then(html => {
+                    console.log('[closeViewer] Got HTML, replacing page content');
+                    // Replace entire page with fetched HTML
+                    document.open();
+                    document.write(html);
+                    document.close();
+                })
+                .catch(error => {
+                    console.error('[closeViewer] Error fetching:', error);
+                    // Fallback: just hide viewer and show dictionary
+                    const viewer = document.getElementById('gameViewer');
+                    viewer.classList.remove('visible');
+                    currentGame = null;
+                    window.scrollTo(0, 0);
+                });
         }
 
         function returnToGameBar() {
