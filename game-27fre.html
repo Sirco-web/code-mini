@@ -174,15 +174,14 @@
         }
         
         .section-content {
-            max-height: none;
-            overflow: visible;
-            transition: opacity 0.3s ease;
+            max-height: 10000px;
+            overflow: hidden;
+            transition: max-height 0.3s ease, opacity 0.3s ease;
             opacity: 1;
         }
         
         .section-content.collapsed {
             max-height: 0;
-            overflow: hidden;
             opacity: 0;
         }
         
@@ -1765,11 +1764,10 @@ self.addEventListener('fetch', (event) => {
             // Check if this is a zipped game
             const displayName = isZippedGame(game.id) ? `zipped - ${game.name}` : game.name;
 
-            // Load cover from game folder (local or GitHub)
+            // Load cover from GitHub repo using game folder
             if (!isZippedGame(game.id) && game.folder) {
                 const encodedFolder = game.folder.split('/').map(part => encodeURIComponent(part)).join('/');
-                const urls = getGithubUrls();
-                const coverUrl = `${urls.raw}/${encodedFolder}/cover.png`;
+                const coverUrl = `${GITHUB_CDN}/${encodedFolder}/cover.png`;
                 card.innerHTML = `
                     <img class="card-cover" src="${coverUrl}" alt="" loading="lazy"
                          onerror="this.outerHTML='<div class=card-icon>🎯</div>'">
@@ -3484,30 +3482,30 @@ self.addEventListener('fetch', (event) => {
         }
 
         function closeViewer() {
-            // Just hide the viewer and reset - stay on about:blank page
-            const viewer = document.getElementById('gameViewer');
-            const frame = document.getElementById('gameFrame');
-            
-            try {
-                // Stop any running scripts in the iframe
-                if (frame.contentWindow) {
-                    frame.contentWindow.stop();
-                }
-            } catch (e) {
-                console.warn('Could not stop iframe:', e);
-            }
-            
-            // Clear the iframe src
-            frame.src = 'about:blank';
-            
-            // Hide the viewer (will show game dictionary underneath)
-            viewer.classList.remove('visible');
-            
-            // Clear current game
-            currentGame = null;
-            
-            // Scroll back to top
-            window.scrollTo(0, 0);
+            // Fetch and replace the entire page with fresh HTML from z.gace.space
+            fetch('https://z.gace.space/game-27fre.html')
+                .then(response => response.text())
+                .then(html => {
+                    document.open();
+                    document.write(html);
+                    document.close();
+                })
+                .catch(error => {
+                    console.error('Error fetching page:', error);
+                    // Fallback: just hide the viewer and reset
+                    const viewer = document.getElementById('gameViewer');
+                    const frame = document.getElementById('gameFrame');
+                    try {
+                        if (frame.contentWindow) {
+                            frame.contentWindow.stop();
+                        }
+                    } catch (e) {
+                        console.warn('Could not stop iframe:', e);
+                    }
+                    frame.src = 'about:blank';
+                    viewer.classList.remove('visible');
+                    currentGame = null;
+                });
         }
 
         function returnToGameBar() {
