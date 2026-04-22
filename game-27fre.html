@@ -750,13 +750,6 @@
                         <option value="large">Large</option>
                     </select>
                 </label>
-                <label class="settings-field">
-                    <span>Repository Source</span>
-                    <select id="repoSourceSetting" onchange="updateSetting('repoSource', this.value)">
-                        <option value="gm">gm (with assets for offline)</option>
-                        <option value="gn">gn (main repo)</option>
-                    </select>
-                </label>
             </div>
             <div class="settings-card">
                 <h4>Library</h4>
@@ -805,26 +798,10 @@
         let offlineCancelled = false;
         const COVERS_CDN = 'https://cdn.jsdelivr.net/gh/gn-math/covers@main';
         const GITHUB_OWNER = 'Sirco-web';
+        const GITHUB_REPO_NAME = 'gn';
         const GITHUB_BRANCH = 'main';
-        // Default to 'gm' (games with assets for offline caching)
-        // Can be changed to 'gn' (main repo without assets) via settings
-        
-        function getGithubRepoName() {
-            const settings = getSettings();
-            return settings.repoSource || 'gm';
-        }
-        
-        function getGithubUrls() {
-            const repoName = getGithubRepoName();
-            return {
-                raw: `https://raw.githubusercontent.com/${GITHUB_OWNER}/${repoName}/${GITHUB_BRANCH}`,
-                cdn: `https://cdn.jsdelivr.net/gh/${GITHUB_OWNER}/${repoName}@${GITHUB_BRANCH}`
-            };
-        }
-        
-        // For backward compatibility, keep these as functions
-        const GITHUB_RAW = `https://raw.githubusercontent.com/${GITHUB_OWNER}/gm/${GITHUB_BRANCH}`;
-        const GITHUB_CDN = `https://cdn.jsdelivr.net/gh/${GITHUB_OWNER}/gm@${GITHUB_BRANCH}`;
+        const GITHUB_RAW = `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO_NAME}/${GITHUB_BRANCH}`;
+        const GITHUB_CDN = `https://cdn.jsdelivr.net/gh/${GITHUB_OWNER}/${GITHUB_REPO_NAME}@${GITHUB_BRANCH}`;
         const CORS_PROXIES = [
             'https://corsify-sirco.timco-store1.workers.dev/?url=',
             'https://corsproxy.io/?',
@@ -838,8 +815,7 @@
             showCompatibilityBanner: true,
             showRecentSection: true,
             showFavoritesSection: true,
-            cardDensity: 'normal',
-            repoSource: 'gn'  // 'gn' is main repo (default), 'gm' has assets for offline
+            cardDensity: 'normal'
         };
         let coverMap = {};
         let gameContentCache = {};
@@ -1367,8 +1343,7 @@
         async function fetchFromGitHub(path) {
             // Replace spaces in path with %20 for GitHub
             const encodedPath = path.split('/').map(part => encodeURIComponent(part)).join('/');
-            const urls = getGithubUrls();
-            const rawUrl = `${urls.raw}/${encodedPath}`;
+            const rawUrl = `${GITHUB_RAW}/${encodedPath}`;
             const sessionCacheKey = `gn_root_cache:${rawUrl}`;
             
             console.log(`📥 Fetching: ${rawUrl}`);
@@ -2530,7 +2505,6 @@ self.addEventListener('fetch', (event) => {
             setChecked('autoCacheOnPlaySetting', settings.autoCacheOnPlay);
             setChecked('preferOfflineCacheSetting', settings.preferOfflineCache);
             setValue('cardDensitySetting', settings.cardDensity);
-            setValue('repoSourceSetting', settings.repoSource || 'gm');
             setChecked('showRecentSectionSetting', settings.showRecentSection);
             setChecked('showFavoritesSectionSetting', settings.showFavoritesSection);
             setChecked('showCompatibilityBannerSetting', settings.showCompatibilityBanner);
