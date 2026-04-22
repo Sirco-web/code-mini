@@ -3484,9 +3484,30 @@ self.addEventListener('fetch', (event) => {
         }
 
         function closeViewer() {
-            // Reload the current page to go back to the game dictionary
-            // This avoids any redirect issues and gives a fresh copy
-            location.reload();
+            // Just hide the viewer and reset - stay on about:blank page
+            const viewer = document.getElementById('gameViewer');
+            const frame = document.getElementById('gameFrame');
+            
+            try {
+                // Stop any running scripts in the iframe
+                if (frame.contentWindow) {
+                    frame.contentWindow.stop();
+                }
+            } catch (e) {
+                console.warn('Could not stop iframe:', e);
+            }
+            
+            // Clear the iframe src
+            frame.src = 'about:blank';
+            
+            // Hide the viewer (will show game dictionary underneath)
+            viewer.classList.remove('visible');
+            
+            // Clear current game
+            currentGame = null;
+            
+            // Scroll back to top
+            window.scrollTo(0, 0);
         }
 
         function returnToGameBar() {
