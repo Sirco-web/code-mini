@@ -795,6 +795,13 @@
             </div>
         </div>
 
+        <div class="section" id="appsSection">
+            <div class="section-title" onclick="toggleSection('appsSection')"><span class="section-toggle">▼</span>🚀 Apps</div>
+            <div class="section-content" id="appsContent">
+                <div class="game-container" id="appsContainer"></div>
+            </div>
+        </div>
+
         <div class="section" id="zippedSection">
             <div class="section-title" onclick="toggleSection('zippedSection')"><span class="section-toggle">▼</span>📦 Zipped Games</div>
             <div class="section-content" id="zippedContent">
@@ -881,6 +888,10 @@
                     <span>Show Recently Played section</span>
                 </label>
                 <label class="settings-toggle">
+                    <input type="checkbox" id="showAppsSectionSetting" onchange="updateSetting('showAppsSection', this.checked)">
+                    <span>Show Apps section</span>
+                </label>
+                <label class="settings-toggle">
                     <input type="checkbox" id="showFavoritesSectionSetting" onchange="updateSetting('showFavoritesSection', this.checked)">
                     <span>Show Favorites section</span>
                 </label>
@@ -962,6 +973,7 @@
 
     <script>
         let allGames = [];
+        let allApps = [];
         let currentGame = null;
         const MAX_RECENT = 5;
         const CACHE_NAME = 'gn-offline-v1';
@@ -970,13 +982,17 @@
         const ZIPPED_GAMES_KEY = 'gn_zipped_games_v1';
         const GAMES_JSON_CACHE_KEY = 'gn_games_json_v1';
         const COVER_MAP_CACHE_KEY = 'gn_cover_map_v1';
+        const APPS_JSON_CACHE_KEY = 'gn_apps_json_v1';
         let offlineCancelled = false;
         const COVERS_CDN = 'https://cdn.jsdelivr.net/gh/gn-math/covers@main';
         const GITHUB_OWNER = 'Sirco-web';
         const GITHUB_REPO_NAME = 'gn';
+        const GITHUB_APPS_REPO = 'codi-apps';
         const GITHUB_BRANCH = 'main';
         const GITHUB_RAW = `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO_NAME}/${GITHUB_BRANCH}`;
         const GITHUB_CDN = `https://cdn.jsdelivr.net/gh/${GITHUB_OWNER}/${GITHUB_REPO_NAME}@${GITHUB_BRANCH}`;
+        const GITHUB_APPS_RAW = `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_APPS_REPO}/${GITHUB_BRANCH}`;
+        const GITHUB_APPS_CDN = `https://cdn.jsdelivr.net/gh/${GITHUB_OWNER}/${GITHUB_APPS_REPO}@${GITHUB_BRANCH}`;
         const CORS_PROXIES = [
             'https://corsify-sirco.timco-store1.workers.dev/?url=',
             'https://corsproxy.io/?',
@@ -989,6 +1005,7 @@
             preferOfflineCache: true,
             showCompatibilityBanner: true,
             showRecentSection: true,
+            showAppsSection: true,
             showFavoritesSection: true,
             cardDensity: 'normal'
         };
@@ -1768,6 +1785,38 @@ self.addEventListener('fetch', (event) => {
             }
         }
 
+        async function fetchApps() {
+            try {
+                // Fetch apps.json from Sirco-web/codi-apps
+                let appsJsonUrl = `${GITHUB_APPS_RAW}/apps.json`;
+                const response = await fetch(appsJsonUrl);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch apps: ${response.status}`);
+                }
+                const appsJson = await response.text();
+                try {
+                    localStorage.setItem(APPS_JSON_CACHE_KEY, appsJson);
+                    console.log('✓ Cached apps.json');
+                } catch (e) {
+                    console.warn('Could not cache apps.json:', e);
+                }
+                return appsJson;
+            } catch (e) {
+                console.warn('Could not fetch apps, trying cache:', e);
+                try {
+                    const cached = localStorage.getItem(APPS_JSON_CACHE_KEY);
+                    if (cached) {
+                        console.log('✓ Using cached apps.json');
+                        return cached;
+                    }
+                    throw new Error('No cached apps available');
+                } catch (cacheError) {
+                    console.warn('Failed to load apps:', cacheError);
+                    return '[]';
+                }
+            }
+        }
+
         async function initGames() {
             try {
                 document.getElementById('loading').classList.add('visible');
@@ -1796,6 +1845,11 @@ self.addEventListener('fetch', (event) => {
                         throw cacheError;
                     }
                 }
+                
+                // Fetch apps
+                const appsJson = await fetchApps();
+                const apps = JSON.parse(appsJson);
+                allApps = apps.filter(a => !a.id.startsWith('-') && !a.name.includes('[!]'));
 
                 const games = JSON.parse(gamesJson);
                 allGames = games.filter(g => !g.id.startsWith('-') && !g.name.includes('[!]'));
@@ -1837,6 +1891,7 @@ self.addEventListener('fetch', (event) => {
 
                 renderGames();
                 renderRecent();
+                renderApps();
                 renderZipped();
                 renderFavorites();
                 document.getElementById('loading').classList.remove('visible');
@@ -1875,6 +1930,25 @@ self.addEventListener('fetch', (event) => {
                 if (game) container.appendChild(createCard(game));
             });
             preloadGameCovers(recent.map((gameId) => allGames.find((game) => game.id === gameId)).filter(Boolean), 16);
+            scheduleLibraryRefresh();
+        }
+
+        function renderApps() {
+            const container = document.getElementById('appsContainer');
+            if (!container) return;
+            
+            container.innerHTML = '';
+            
+            if (allApps.length === 0) {
+                container.innerHTML = '<p style="color:#999">No apps available</p>';
+                scheduleLibraryRefresh();
+                return;
+            }
+
+            allApps.forEach(app => {
+                container.appendChild(createCard(app));
+            });
+            preloadGameCovers(allApps, 16);
             scheduleLibraryRefresh();
         }
 
@@ -1932,8 +2006,7 @@ self.addEventListener('fetch', (event) => {
 
             // Load cover from GitHub repo using game folder
             if (!isZippedGame(game.id) && game.folder) {
-                const encodedFolder = game.folder.split('/').map(part => encodeURIComponent(part)).join('/');
-                const coverUrl = `${GITHUB_CDN}/${encodedFolder}/cover.png`;
+                const coverUrl = getCoverUrlForGame(game);
                 card.innerHTML = `
                     <img class="card-cover" src="${coverUrl}" alt="" loading="lazy"
                          onerror="this.outerHTML='<div class=card-icon>🎯</div>'">
@@ -2679,6 +2752,7 @@ self.addEventListener('fetch', (event) => {
         function applySettingsToUI() {
             const settings = getSettings();
             const recentSection = document.getElementById('recentSection');
+            const appsSection = document.getElementById('appsSection');
             const zippedSection = document.getElementById('zippedSection');
             const favoritesSection = document.getElementById('favoritesSection');
 
@@ -2697,10 +2771,12 @@ self.addEventListener('fetch', (event) => {
             setChecked('preferOfflineCacheSetting', settings.preferOfflineCache);
             setValue('cardDensitySetting', settings.cardDensity);
             setChecked('showRecentSectionSetting', settings.showRecentSection);
+            setChecked('showAppsSectionSetting', settings.showAppsSection);
             setChecked('showFavoritesSectionSetting', settings.showFavoritesSection);
             setChecked('showCompatibilityBannerSetting', settings.showCompatibilityBanner);
 
             if (recentSection) recentSection.style.display = settings.showRecentSection ? '' : 'none';
+            if (appsSection) appsSection.style.display = settings.showAppsSection ? '' : 'none';
             if (zippedSection) zippedSection.style.display = ''; // Always show zipped section
             if (favoritesSection) favoritesSection.style.display = settings.showFavoritesSection ? '' : 'none';
 
@@ -2866,7 +2942,10 @@ self.addEventListener('fetch', (event) => {
         function getCoverUrlForGame(game) {
             if (!game || isZippedGame(game.id) || !game.folder) return null;
             const encodedFolder = game.folder.split('/').map(part => encodeURIComponent(part)).join('/');
-            return `${GITHUB_CDN}/${encodedFolder}/cover.png`;
+            // Use apps CDN if this game is actually an app
+            const isApp = allApps.some(a => a.id === game.id);
+            const cdn = isApp ? GITHUB_APPS_CDN : GITHUB_CDN;
+            return `${cdn}/${encodedFolder}/cover.png`;
         }
 
         function preloadGameCovers(games, limit = 48) {
@@ -3048,7 +3127,10 @@ self.addEventListener('fetch', (event) => {
                 return `${location.origin}/${encodedFolder}/index.html`;
             }
             const encodedFolder = game.folder.split('/').map(part => encodeURIComponent(part)).join('/');
-            return `${GITHUB_CDN}/${encodedFolder}/index.html`;
+            // Use apps CDN if this game is actually an app
+            const isApp = allApps.some(a => a.id === game.id);
+            const cdn = isApp ? GITHUB_APPS_CDN : GITHUB_CDN;
+            return `${cdn}/${encodedFolder}/index.html`;
         }
 
         function ensureBaseTag(html, gameUrl) {
