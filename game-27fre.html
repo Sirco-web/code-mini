@@ -58,6 +58,7 @@
             display: flex;
             align-items: center;
             gap: 10px;
+            flex-wrap: wrap;
         }
 
         .header-settings-btn {
@@ -76,6 +77,11 @@
         .header-settings-btn:hover {
             background: rgba(255,255,255,0.3);
             border-color: rgba(255,255,255,0.6);
+        }
+
+        .header-cookie-btn {
+            min-width: 44px;
+            padding-inline: 14px;
         }
         
         .search-container {
@@ -129,6 +135,7 @@
         
         .content {
             padding: 30px 20px;
+            padding-bottom: 72px;
             max-width: 1400px;
             margin: 0 auto;
         }
@@ -174,7 +181,7 @@
         }
         
         .section-content {
-            max-height: 10000px;
+            max-height: 200000px;
             overflow: hidden;
             transition: max-height 0.3s ease, opacity 0.3s ease;
             opacity: 1;
@@ -222,7 +229,7 @@
 
         .card-cover {
             width: 100%;
-            min-height: 120px;
+            height: 120px;
             object-fit: cover;
             display: block;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -358,6 +365,7 @@
             background: #f5f5f5;
             border-top: 1px solid #ddd;
             padding: 20px;
+            margin-top: 24px;
             text-align: center;
             color: #666;
             font-size: 12px;
@@ -618,6 +626,120 @@
             font-size: 12px;
         }
 
+        .library-overlay-backdrop {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.6);
+            z-index: 2500;
+            backdrop-filter: blur(5px);
+        }
+
+        .library-overlay-backdrop.visible {
+            display: block;
+        }
+
+        .library-overlay-panel {
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: min(92vw, 560px);
+            background: white;
+            border-radius: 20px;
+            padding: 24px;
+            z-index: 2600;
+            box-shadow: 0 30px 80px rgba(15, 23, 42, 0.3);
+            display: none;
+        }
+
+        .library-overlay-panel.visible {
+            display: block;
+        }
+
+        .library-overlay-panel h3 {
+            margin: 0 0 10px 0;
+            font-size: 24px;
+            color: #0f172a;
+        }
+
+        .library-overlay-panel p {
+            margin: 0;
+            color: #475569;
+            line-height: 1.5;
+        }
+
+        .library-overlay-list {
+            margin: 18px 0 20px;
+            display: grid;
+            gap: 12px;
+        }
+
+        .library-overlay-step {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 14px 16px;
+            color: #334155;
+            line-height: 1.45;
+        }
+
+        .library-overlay-step strong {
+            display: block;
+            color: #0f172a;
+            margin-bottom: 4px;
+        }
+
+        .overlay-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .overlay-action {
+            background: #0f172a;
+            color: white;
+            border: none;
+            border-radius: 999px;
+            padding: 11px 18px;
+            cursor: pointer;
+            font-weight: 700;
+        }
+
+        .overlay-action.secondary {
+            background: #e2e8f0;
+            color: #0f172a;
+        }
+
+        .overlay-action:hover {
+            opacity: 0.92;
+        }
+
+        .backup-status {
+            margin-top: 10px;
+            min-height: 20px;
+            color: #64748b;
+            font-size: 13px;
+        }
+
+        .backup-file-input {
+            display: none;
+        }
+
+        .cookie-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 48px;
+            height: 48px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, #fff7ed, #fde68a);
+            color: #9a3412;
+            font-size: 24px;
+            box-shadow: inset 0 0 0 1px rgba(154, 52, 18, 0.12);
+        }
+
         @media (max-width: 700px) {
             .header-top {
                 flex-direction: column;
@@ -640,6 +762,7 @@
         <div class="header-top">
             <h1>📚 Code Universe Dictionary</h1>
             <div class="header-actions">
+                <button class="header-settings-btn header-cookie-btn" onclick="toggleDataBackupPanel(true)" title="Backup or restore site data">🍪</button>
                 <button class="header-settings-btn" onclick="toggleSettingsPanel(true)">⚙️ Settings</button>
             </div>
         </div>
@@ -703,7 +826,7 @@
                 <button onclick="openInSameTab()">🧭 Same Tab</button>
                 <button onclick="openInNewTab()">📑 New Tab</button>
                 <button class="fullscreen-btn" id="fsBtn" onclick="toggleFullscreen()">🔲 Fullscreen</button>
-                <button class="gamebar-btn" id="gamebarBtn" onclick="returnToGameBar()">🎮 Game Bar</button>
+                <button class="gamebar-btn" id="gamebarBtn" onclick="handleGameBarButton(event)">🎮 Game Bar</button>
                 <button class="close" onclick="closeViewer()">✕ Close</button>
             </div>
         </div>
@@ -785,6 +908,58 @@
         </div>
     </div>
 
+    <div id="tutorialBackdrop" class="library-overlay-backdrop" onclick="hideSiteTutorial()"></div>
+    <div id="tutorialPanel" class="library-overlay-panel" role="dialog" aria-modal="true" aria-labelledby="tutorialTitle">
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;">
+            <div class="cookie-badge">🍪</div>
+            <div>
+                <h3 id="tutorialTitle">Welcome to Code Mini</h3>
+                <p>Here’s the quick tour for the library and the game launch controls.</p>
+            </div>
+        </div>
+        <div class="library-overlay-list">
+            <div class="library-overlay-step">
+                <strong>Browse and search</strong>
+                Use the search bar to find games, and the sections can be collapsed so the page stays tidy.
+            </div>
+            <div class="library-overlay-step">
+                <strong>Launch your way</strong>
+                Same Tab replaces the page, Viewer keeps you in the library, and the Game Bar button brings you back.
+            </div>
+            <div class="library-overlay-step">
+                <strong>Save your setup</strong>
+                The cookie button in the top right backs up cookies and local storage to a JSON file.
+            </div>
+        </div>
+        <div class="overlay-actions">
+            <button class="overlay-action secondary" type="button" onclick="hideSiteTutorial()">Skip</button>
+            <button class="overlay-action" type="button" onclick="completeSiteTutorial()">Start exploring</button>
+        </div>
+    </div>
+
+    <div id="backupBackdrop" class="library-overlay-backdrop" onclick="toggleDataBackupPanel(false)"></div>
+    <div id="backupPanel" class="library-overlay-panel" role="dialog" aria-modal="true" aria-labelledby="backupTitle">
+        <h3 id="backupTitle">🍪 Site Data Backup</h3>
+        <p>Export your accessible cookies and local storage as a JSON file, or import a backup to restore them.</p>
+        <div class="library-overlay-list" style="margin-top:16px;">
+            <div class="library-overlay-step">
+                <strong>Export</strong>
+                Downloads everything this site can read from `document.cookie` and `localStorage`.
+            </div>
+            <div class="library-overlay-step">
+                <strong>Import</strong>
+                Replaces the current site cookies and local storage with the contents of a JSON backup.
+            </div>
+        </div>
+        <div class="overlay-actions">
+            <button class="overlay-action secondary" type="button" onclick="toggleDataBackupPanel(false)">Close</button>
+            <button class="overlay-action secondary" type="button" onclick="triggerBackupImport()">Import JSON</button>
+            <button class="overlay-action" type="button" onclick="exportSiteData()">Export JSON</button>
+        </div>
+        <div class="backup-status" id="backupStatus"></div>
+        <input class="backup-file-input" id="backupFileInput" type="file" accept="application/json,.json" onchange="handleBackupImport(event)">
+    </div>
+
     <script>
         let allGames = [];
         let currentGame = null;
@@ -817,8 +992,13 @@
             showFavoritesSection: true,
             cardDensity: 'normal'
         };
+        const SITE_TUTORIAL_COOKIE = 'code-mini-start';
+        const COOKIE_BACKUP_VERSION = 1;
         let coverMap = {};
         let gameContentCache = {};
+        let coverPrefetchTimer = null;
+        let coverPrefetchQueue = new Map();
+        let sectionResizeObserver = null;
         
         // Games reported to have issues (multi-part loaders, emulators, etc.)
         const PROBLEMATIC_GAMES = new Set([
@@ -1662,6 +1842,7 @@ self.addEventListener('fetch', (event) => {
                 document.getElementById('loading').classList.remove('visible');
                 applySettingsToUI();
                 updateOfflineButton();
+                showSiteTutorialIfNeeded();
             } catch (error) {
                 console.error('Error loading games:', error);
                 document.getElementById('loading').textContent = '❌ Failed to load games.';
@@ -1674,6 +1855,8 @@ self.addEventListener('fetch', (event) => {
             allGames.forEach(game => {
                 container.appendChild(createCard(game));
             });
+            preloadGameCovers(allGames);
+            scheduleLibraryRefresh();
         }
 
         function renderRecent() {
@@ -1683,6 +1866,7 @@ self.addEventListener('fetch', (event) => {
             
             if (recent.length === 0) {
                 container.innerHTML = '<p style="color:#999">No games played yet</p>';
+                scheduleLibraryRefresh();
                 return;
             }
 
@@ -1690,6 +1874,8 @@ self.addEventListener('fetch', (event) => {
                 const game = allGames.find(g => g.id === gameId);
                 if (game) container.appendChild(createCard(game));
             });
+            preloadGameCovers(recent.map((gameId) => allGames.find((game) => game.id === gameId)).filter(Boolean), 16);
+            scheduleLibraryRefresh();
         }
 
         function renderZipped() {
@@ -1701,6 +1887,7 @@ self.addEventListener('fetch', (event) => {
             
             if (zipped.length === 0) {
                 container.innerHTML = '<p style="color:#999">No zipped games imported yet</p>';
+                scheduleLibraryRefresh();
                 return;
             }
 
@@ -1714,6 +1901,7 @@ self.addEventListener('fetch', (event) => {
                 card.onclick = () => playGame(zipGame);
                 container.appendChild(card);
             });
+            scheduleLibraryRefresh();
         }
 
         function renderFavorites() {
@@ -1723,6 +1911,7 @@ self.addEventListener('fetch', (event) => {
             
             if (favs.length === 0) {
                 container.innerHTML = '<p style="color:#999">No favorites yet</p>';
+                scheduleLibraryRefresh();
                 return;
             }
 
@@ -1730,6 +1919,8 @@ self.addEventListener('fetch', (event) => {
                 const game = allGames.find(g => g.id === gameId);
                 if (game) container.appendChild(createCard(game));
             });
+            preloadGameCovers(favs.map((gameId) => allGames.find((game) => game.id === gameId)).filter(Boolean), 16);
+            scheduleLibraryRefresh();
         }
 
         function createCard(game) {
@@ -2516,6 +2707,244 @@ self.addEventListener('fetch', (event) => {
             applyCardDensity(settings.cardDensity);
             updateInfoBannerVisibility();
             updateSettingsCacheMeta();
+            refreshSectionHeights();
+        }
+
+        function parseCookieString(cookieString) {
+            const result = {};
+            String(cookieString || '')
+                .split(';')
+                .map((entry) => entry.trim())
+                .filter(Boolean)
+                .forEach((entry) => {
+                    const index = entry.indexOf('=');
+                    const name = index >= 0 ? entry.slice(0, index) : entry;
+                    const value = index >= 0 ? entry.slice(index + 1) : '';
+                    if (!name) return;
+                    try {
+                        result[decodeURIComponent(name)] = decodeURIComponent(value);
+                    } catch {
+                        result[name] = value;
+                    }
+                });
+            return result;
+        }
+
+        function getCookieMap() {
+            return parseCookieString(document.cookie);
+        }
+
+        function setCookieValue(name, value, maxAgeSeconds = 60 * 60 * 24 * 365) {
+            const encodedName = encodeURIComponent(name);
+            const encodedValue = encodeURIComponent(String(value ?? ''));
+            document.cookie = `${encodedName}=${encodedValue}; path=/; max-age=${maxAgeSeconds}; samesite=lax`;
+        }
+
+        function clearCookieValue(name) {
+            document.cookie = `${encodeURIComponent(name)}=; path=/; max-age=0; samesite=lax`;
+        }
+
+        function getSiteDataBackup() {
+            const cookies = getCookieMap();
+            const localStorageData = {};
+            for (let i = 0; i < localStorage.length; i += 1) {
+                const key = localStorage.key(i);
+                if (key !== null) {
+                    localStorageData[key] = localStorage.getItem(key);
+                }
+            }
+            return {
+                version: COOKIE_BACKUP_VERSION,
+                exportedAt: new Date().toISOString(),
+                origin: location.origin,
+                cookies,
+                localStorage: localStorageData
+            };
+        }
+
+        function downloadJsonFile(filename, payload) {
+            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+
+        function toggleDataBackupPanel(forceState) {
+            const panel = document.getElementById('backupPanel');
+            const backdrop = document.getElementById('backupBackdrop');
+            const shouldOpen = typeof forceState === 'boolean'
+                ? forceState
+                : !panel.classList.contains('visible');
+
+            panel.classList.toggle('visible', shouldOpen);
+            backdrop.classList.toggle('visible', shouldOpen);
+            if (shouldOpen) {
+                updateBackupStatus('Ready to export or import.');
+            }
+        }
+
+        function updateBackupStatus(message) {
+            const status = document.getElementById('backupStatus');
+            if (status) status.textContent = message || '';
+        }
+
+        function exportSiteData() {
+            const payload = getSiteDataBackup();
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            downloadJsonFile(`code-mini-backup-${timestamp}.json`, payload);
+            updateBackupStatus(`Exported ${Object.keys(payload.localStorage).length} localStorage keys and ${Object.keys(payload.cookies).length} cookies.`);
+        }
+
+        function triggerBackupImport() {
+            document.getElementById('backupFileInput')?.click();
+        }
+
+        async function handleBackupImport(event) {
+            const file = event.target.files?.[0];
+            if (!file) return;
+
+            try {
+                const text = await file.text();
+                const parsed = JSON.parse(text);
+                const cookies = parsed?.cookies && typeof parsed.cookies === 'object' ? parsed.cookies : {};
+                const localStorageData = parsed?.localStorage && typeof parsed.localStorage === 'object' ? parsed.localStorage : {};
+
+                if (!confirm('Importing will replace the current site cookies and local storage. Continue?')) {
+                    event.target.value = '';
+                    return;
+                }
+
+                const currentCookies = Object.keys(getCookieMap());
+                currentCookies.forEach(clearCookieValue);
+                localStorage.clear();
+
+                Object.entries(localStorageData).forEach(([key, value]) => {
+                    localStorage.setItem(key, value);
+                });
+
+                Object.entries(cookies).forEach(([key, value]) => {
+                    setCookieValue(key, value);
+                });
+
+                updateBackupStatus('Import complete. Refreshing the library...');
+                toggleDataBackupPanel(false);
+                window.location.reload();
+            } catch (error) {
+                console.error('Backup import failed:', error);
+                updateBackupStatus(`Import failed: ${error.message}`);
+            } finally {
+                event.target.value = '';
+            }
+        }
+
+        function refreshSectionHeights() {
+            const contents = document.querySelectorAll('.section-content');
+            contents.forEach((content) => {
+                if (content.classList.contains('collapsed')) return;
+                content.style.maxHeight = `${content.scrollHeight}px`;
+            });
+        }
+
+        function setupSectionResizeObserver() {
+            if (sectionResizeObserver || typeof ResizeObserver === 'undefined') return;
+            sectionResizeObserver = new ResizeObserver((entries) => {
+                entries.forEach((entry) => {
+                    const content = entry.target;
+                    if (content.classList.contains('collapsed')) return;
+                    content.style.maxHeight = `${content.scrollHeight}px`;
+                });
+            });
+
+            document.querySelectorAll('.section-content').forEach((content) => sectionResizeObserver.observe(content));
+        }
+
+        function getCoverUrlForGame(game) {
+            if (!game || isZippedGame(game.id) || !game.folder) return null;
+            const encodedFolder = game.folder.split('/').map(part => encodeURIComponent(part)).join('/');
+            return `${GITHUB_CDN}/${encodedFolder}/cover.png`;
+        }
+
+        function preloadGameCovers(games, limit = 48) {
+            if (!Array.isArray(games) || games.length === 0) return;
+            games.slice(0, limit).forEach((game) => {
+                const coverUrl = getCoverUrlForGame(game);
+                if (!coverUrl || coverPrefetchQueue.has(coverUrl)) return;
+                coverPrefetchQueue.set(coverUrl, game);
+            });
+
+            if (coverPrefetchTimer) return;
+
+            coverPrefetchTimer = setTimeout(() => {
+                const queue = Array.from(coverPrefetchQueue.keys()).slice(0, 60);
+                coverPrefetchQueue.clear();
+                coverPrefetchTimer = null;
+
+                queue.forEach((coverUrl) => {
+                    const img = new Image();
+                    img.decoding = 'async';
+                    img.loading = 'eager';
+                    img.src = coverUrl;
+                });
+            }, 120);
+        }
+
+        function scheduleLibraryRefresh() {
+            refreshSectionHeights();
+            setupSectionResizeObserver();
+            requestAnimationFrame(() => refreshSectionHeights());
+            setTimeout(() => refreshSectionHeights(), 300);
+        }
+
+        function showSiteTutorialIfNeeded() {
+            const isLibraryPage = Boolean(document.getElementById('gamesContainer'));
+            if (!isLibraryPage) return;
+            if (getCookieMap()[SITE_TUTORIAL_COOKIE] === '1') return;
+            const backdrop = document.getElementById('tutorialBackdrop');
+            const panel = document.getElementById('tutorialPanel');
+            if (!backdrop || !panel) return;
+            backdrop.classList.add('visible');
+            panel.classList.add('visible');
+        }
+
+        function hideSiteTutorial(markComplete = true) {
+            if (markComplete) {
+                setCookieValue(SITE_TUTORIAL_COOKIE, '1');
+            }
+            const backdrop = document.getElementById('tutorialBackdrop');
+            const panel = document.getElementById('tutorialPanel');
+            backdrop?.classList.remove('visible');
+            panel?.classList.remove('visible');
+        }
+
+        function completeSiteTutorial() {
+            hideSiteTutorial(true);
+        }
+
+        function getLibraryPageUrl() {
+            if (sessionStorage.getItem('codeMini_libraryUrl')) {
+                return sessionStorage.getItem('codeMini_libraryUrl');
+            }
+            return window.location.href.split('#')[0];
+        }
+
+        function openLibraryPageInNewTab() {
+            const url = getLibraryPageUrl();
+            window.open(url, '_blank', 'noopener');
+        }
+
+        function handleGameBarButton(event) {
+            if (event && (event.ctrlKey || event.metaKey)) {
+                event.preventDefault();
+                event.stopPropagation();
+                openLibraryPageInNewTab();
+                return false;
+            }
+            return returnToGameBar();
         }
 
         async function cacheVisibleGames() {
@@ -3212,6 +3641,19 @@ self.addEventListener('fetch', (event) => {
                             close(event) {
                                 console.log('🔴 [close] Close button clicked');
                                 console.log('🔴 [close] Event:', event);
+
+                                if (event && (event.ctrlKey || event.metaKey)) {
+                                    const libraryUrl = sessionStorage.getItem('codeMini_libraryUrl') || window.location.href.split('#')[0];
+                                    console.log('🟢 [close] Ctrl-click detected, opening game bar in a new tab:', libraryUrl);
+                                    if (libraryUrl) {
+                                        if (originalOpen) {
+                                            originalOpen(libraryUrl, '_blank', 'noopener');
+                                        } else {
+                                            window.open(libraryUrl, '_blank', 'noopener');
+                                        }
+                                    }
+                                    return stop(event);
+                                }
                                 
                                 // Check sessionStorage state
                                 const fromLibrary = sessionStorage.getItem('codeMini_fromLibrary');
@@ -3666,11 +4108,13 @@ self.addEventListener('fetch', (event) => {
                 // Expand
                 content.classList.remove('collapsed');
                 toggle.classList.remove('collapsed');
+                content.style.maxHeight = `${content.scrollHeight}px`;
                 localStorage.setItem(`section-${sectionId}`, 'expanded');
             } else {
                 // Collapse
                 content.classList.add('collapsed');
                 toggle.classList.add('collapsed');
+                content.style.maxHeight = '0px';
                 localStorage.setItem(`section-${sectionId}`, 'collapsed');
             }
         }
@@ -3688,8 +4132,12 @@ self.addEventListener('fetch', (event) => {
                 if (state === 'collapsed') {
                     content.classList.add('collapsed');
                     toggle.classList.add('collapsed');
+                    content.style.maxHeight = '0px';
+                } else {
+                    content.style.maxHeight = `${content.scrollHeight}px`;
                 }
             });
+            refreshSectionHeights();
         }
 
         // Initialize sections on load
@@ -3711,6 +4159,15 @@ self.addEventListener('fetch', (event) => {
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
+            const tutorialVisible = document.getElementById('tutorialPanel')?.classList.contains('visible');
+            const backupVisible = document.getElementById('backupPanel')?.classList.contains('visible');
+
+            if (e.key === 'Escape' && (tutorialVisible || backupVisible)) {
+                hideSiteTutorial();
+                toggleDataBackupPanel(false);
+                return;
+            }
+
             if (e.key === 'Escape') {
                 // If in fullscreen, let browser handle exit first
                 if (document.fullscreenElement) return;
@@ -3941,6 +4398,8 @@ self.addEventListener('fetch', (event) => {
             filtered.forEach(game => {
                 container.appendChild(createCard(game));
             });
+            preloadGameCovers(filtered, 32);
+            scheduleLibraryRefresh();
         });
 
         document.getElementById('clearBtn').addEventListener('click', () => {
@@ -3951,6 +4410,8 @@ self.addEventListener('fetch', (event) => {
 
         window.addEventListener('load', async () => {
             applySettingsToUI();
+            showSiteTutorialIfNeeded();
+            setupSectionResizeObserver();
             await registerOfflineWorker();
             await pakoReady;
             console.log('Starting initGames after pako ready...');
