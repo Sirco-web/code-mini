@@ -2176,7 +2176,8 @@ self.addEventListener('fetch', (event) => {
         }
 
         function getGameDocumentCacheUrl(gameId, variant = 'standalone') {
-            return `${location.origin}/__code-mini-cache__/games/${encodeURIComponent(gameId)}/${variant}.html`;
+            const cacheVersion = 'v2';
+            return `${location.origin}/__code-mini-cache__/games/${encodeURIComponent(gameId)}/${cacheVersion}/${variant}.html`;
         }
 
         async function readCachedGameDocument(gameId, variant = 'standalone') {
@@ -2599,14 +2600,14 @@ self.addEventListener('fetch', (event) => {
         async function cacheGameForOffline(game, options = {}) {
             const {
                 variant = 'standalone',
-                preparedHtml = null,
+                rawHtml = null,
                 prefetchAssets = true,
                 forceRefresh = false,
                 progressCallback = null
             } = options;
 
             const gameUrl = getGameUrl(game);
-            let html = preparedHtml;
+            let html = rawHtml;
             let source = 'network';
 
             if (!html && !forceRefresh) {
@@ -2652,9 +2653,7 @@ self.addEventListener('fetch', (event) => {
                     throw new Error(`Content doesn't appear to be HTML (${contentType})`);
                 }
                 
-                html = variant === 'viewer'
-                    ? prepareGameHtml(rawHtml, gameUrl)
-                    : prepareStandaloneHtml(rawHtml, gameUrl, game);
+                html = rawHtml;
                 source = 'network';
             }
 
@@ -2680,9 +2679,12 @@ self.addEventListener('fetch', (event) => {
             const gameUrl = getGameUrl(game);
 
             if (settings.preferOfflineCache) {
-                const cached = await readCachedGameDocument(game.id, variant);
-                if (cached) {
-                    return { html: cached, gameUrl, source: 'cache' };
+                const cachedRaw = await readCachedGameDocument(game.id, variant);
+                if (cachedRaw) {
+                    const html = variant === 'viewer'
+                        ? prepareGameHtml(cachedRaw, gameUrl, game)
+                        : prepareStandaloneHtml(cachedRaw, gameUrl, game);
+                    return { html, gameUrl, source: 'cache' };
                 }
             }
 
@@ -2721,7 +2723,7 @@ self.addEventListener('fetch', (event) => {
             if (settings.autoCacheOnPlay) {
                 await cacheGameForOffline(game, {
                     variant,
-                    preparedHtml: html,
+                    rawHtml,
                     prefetchAssets: true
                 });
             }
@@ -3156,12 +3158,20 @@ self.addEventListener('fetch', (event) => {
                 /<div\s+id="sidebarad1"[\s\S]*?<\/div>\s*<\/div>/gi,
                 /<div\s+id="sidebarad2"[\s\S]*?<\/div>\s*<\/div>/gi
             ];
+            const brandingElements = [
+                /<title\b[^>]*>[\s\S]*?<\/title>/gi,
+                /<link\b[^>]*rel\s*=\s*["'][^"']*(?:shortcut\s+icon|icon)[^"']*["'][^>]*>/gi,
+                /<link\b[^>]*rel\s*=\s*icon[^>]*>/gi
+            ];
 
             let sanitized = html;
             blockedPatterns.forEach((pattern) => {
                 sanitized = sanitized.replace(pattern, '');
             });
             blockedElements.forEach((pattern) => {
+                sanitized = sanitized.replace(pattern, '');
+            });
+            brandingElements.forEach((pattern) => {
                 sanitized = sanitized.replace(pattern, '');
             });
 
@@ -3257,6 +3267,8 @@ self.addEventListener('fetch', (event) => {
             
             let prepared = ensureBaseTag(sanitizeGameHtml(html), gameUrl);
             const storageKey = `code-mini:ytgame:${gameUrl}`;
+            const libraryTitle = document.title || 'Code Mini';
+            const libraryIconHref = document.querySelector("link[rel~='icon']")?.href || '';
             
             // For zipped games, ensure fetch can serve from cache
             const fetchHandlerScript = (game && (game.isZipped || game.id.startsWith('zipped_'))) ? `<script>
@@ -3361,6 +3373,73 @@ self.addEventListener('fetch', (event) => {
                         get() { return null; }
                     });
                 } catch (e) {}
+
+                (function() {
+                    const libraryTitle = ${JSON.stringify(libraryTitle)};
+                    const libraryIconHref = ${JSON.stringify(libraryIconHref)};
+                    const iconSelector = "link[rel~='icon'], link[rel='shortcut icon']";
+
+                    const ensureLibraryBranding = () => {
+                        try {
+                            if (document.title !== libraryTitle) {
+                                document.title = libraryTitle;
+                            }
+                        } catch (e) {}
+
+                        if (!libraryIconHref) return;
+
+                        try {
+                            const icons = Array.from(document.querySelectorAll(iconSelector));
+                            let keepIcon = null;
+
+                            for (const icon of icons) {
+                                const rel = (icon.getAttribute('rel') || '').toLowerCase();
+                                const href = icon.href || icon.getAttribute('href') || '';
+                                const isLibraryIcon = href === libraryIconHref;
+
+                                if (isLibraryIcon) {
+                                    keepIcon = icon;
+                                    continue;
+                                }
+
+                                if (rel.includes('icon')) {
+                                    icon.remove();
+                                }
+                            }
+
+                            if (!keepIcon) {
+                                const nextIcon = document.createElement('link');
+                                nextIcon.rel = 'icon';
+                                nextIcon.type = 'image/svg+xml';
+                                nextIcon.href = libraryIconHref;
+                                document.head.appendChild(nextIcon);
+                            }
+                        } catch (e) {}
+                    };
+
+                    try {
+                        Object.defineProperty(document, 'title', {
+                            configurable: true,
+                            get() {
+                                return libraryTitle;
+                            },
+                            set() {
+                                return libraryTitle;
+                            }
+                        });
+                    } catch (e) {}
+
+                    ensureLibraryBranding();
+                    const brandingObserver = new MutationObserver(() => ensureLibraryBranding());
+                    brandingObserver.observe(document.documentElement, {
+                        childList: true,
+                        subtree: true,
+                        attributes: true,
+                        attributeFilter: ['href', 'rel', 'content']
+                    });
+
+                    window.addEventListener('load', ensureLibraryBranding);
+                })();
 
                 window.__codeMiniRunStarted = false;
                 window.__codeMiniRunRequested = false;
@@ -3496,27 +3575,62 @@ self.addEventListener('fetch', (event) => {
             const gameId = game?.id || '';
             const standaloneOverlay = `
                 <style>
-                    #codeMiniStandaloneHeader {
+                    #codeMiniStandaloneLauncher {
                         position: fixed;
+                        top: 12px;
+                        left: 50%;
+                        transform: translateX(-50%);
+                        z-index: 2147483646;
+                        background: rgba(102, 126, 234, 0.95);
+                        color: white;
+                        border: none;
+                        padding: 10px 14px;
+                        border-radius: 999px;
+                        cursor: pointer;
+                        font: 600 14px/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                        box-shadow: 0 8px 20px rgba(0,0,0,0.18);
+                        transition: background 0.2s, transform 0.2s;
+                        opacity: 0.35;
+                        pointer-events: none;
+                        user-select: none;
+                        -webkit-user-select: none;
+                        -moz-user-select: none;
+                        -ms-user-select: none;
+                        touch-action: manipulation;
+                    }
+                    #codeMiniStandaloneLauncher:hover {
+                        background: #764ba2;
+                        transform: translateX(-50%) translateY(-1px);
+                    }
+                    #codeMiniStandaloneLauncher.ctrl-active:hover {
+                        transform: translateX(-50%) translateY(-1px);
+                    }
+                    #codeMiniStandaloneLauncher.ctrl-active {
+                        pointer-events: auto;
+                        opacity: 1;
+                    }
+                    #codeMiniStandaloneHost {
+                        position: fixed;
+                        inset: 0;
+                        z-index: 2147483647;
+                        pointer-events: none;
+                    }
+                    #codeMiniStandaloneHeader {
+                        position: absolute;
                         top: 0;
                         left: 0;
                         right: 0;
-                        z-index: 2147483647;
                         display: flex;
-                        justify-content: center;
                         align-items: center;
-                        gap: 20px;
-                        padding: 15px 20px;
-                        background: transparent;
+                        justify-content: space-between;
+                        gap: 16px;
+                        padding: 14px 18px;
+                        background: rgba(51, 51, 51, 0.96);
                         color: #fff;
                         font: 600 16px/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                        box-shadow: none;
-                        transition: background 0.3s, padding 0.3s;
-                    }
-                    #codeMiniStandaloneHeader.expanded {
-                        background: #333;
                         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-                        justify-content: space-between;
+                        pointer-events: auto;
+                        flex-wrap: wrap;
                     }
                     #codeMiniStandaloneTitle {
                         flex: 1;
@@ -3524,48 +3638,15 @@ self.addEventListener('fetch', (event) => {
                         overflow: hidden;
                         text-overflow: ellipsis;
                         white-space: nowrap;
-                        display: none;
-                    }
-                    #codeMiniStandaloneHeader.expanded #codeMiniStandaloneTitle {
-                        display: block;
-                    }
-                    #codeMiniStandaloneMenuBtn {
-                        background: rgba(102, 126, 234, 0.4);
-                        color: white;
-                        border: none;
-                        padding: 12px 16px;
-                        border-radius: 8px;
-                        cursor: pointer;
-                        font: 600 16px/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                        transition: background 0.2s, opacity 0.2s;
-                        pointer-events: none;
-                        opacity: 0.4;
-                        user-select: none;
-                        -webkit-user-select: none;
-                        -moz-user-select: none;
-                        -ms-user-select: none;
-                    }
-                    #codeMiniStandaloneMenuBtn.ctrl-active {
-                        pointer-events: auto;
-                    }
-                    #codeMiniStandaloneMenuBtn:hover {
-                        opacity: 0.6;
-                    }
-                    #codeMiniStandaloneHeader.expanded #codeMiniStandaloneMenuBtn {
-                        background: #667eea;
-                        opacity: 1;
-                        display: none;
                     }
                     #codeMiniStandaloneControls {
-                        display: none;
+                        display: flex;
                         align-items: center;
                         gap: 10px;
                         flex-wrap: wrap;
                     }
-                    #codeMiniStandaloneHeader.expanded #codeMiniStandaloneControls {
-                        display: flex;
-                    }
-                    #codeMiniStandaloneControls button {
+                    #codeMiniStandaloneControls button,
+                    #codeMiniStandaloneHideBtn {
                         background: #667eea;
                         color: white;
                         border: none;
@@ -3574,10 +3655,18 @@ self.addEventListener('fetch', (event) => {
                         cursor: pointer;
                         font: 600 12px/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                         transition: background 0.2s;
-                        pointer-events: auto;
                     }
-                    #codeMiniStandaloneControls button:hover {
+                    #codeMiniStandaloneControls button:hover,
+                    #codeMiniStandaloneHideBtn:hover {
                         background: #764ba2;
+                    }
+                    #codeMiniStandaloneHideBtn {
+                        background: rgba(255, 255, 255, 0.16);
+                        border: 1px solid rgba(255, 255, 255, 0.35);
+                        margin-left: auto;
+                    }
+                    #codeMiniStandaloneHideBtn:hover {
+                        background: rgba(255, 255, 255, 0.26);
                     }
                     #codeMiniStandaloneFav {
                         background: #e91e63;
@@ -3598,35 +3687,59 @@ self.addEventListener('fetch', (event) => {
                         background: #c82333;
                     }
                     @media (max-width: 700px) {
-                        #codeMiniStandaloneHeader.expanded {
+                        #codeMiniStandaloneHeader {
                             padding: 12px;
-                            gap: 12px;
                             align-items: flex-start;
                             flex-direction: column;
                         }
-                        #codeMiniStandaloneHeader.expanded #codeMiniStandaloneControls {
+                        #codeMiniStandaloneTitle,
+                        #codeMiniStandaloneControls,
+                        #codeMiniStandaloneHideBtn {
                             width: 100%;
+                        }
+                        #codeMiniStandaloneHideBtn {
+                            margin-left: 0;
                         }
                     }
                 </style>
-                <div id="codeMiniStandaloneHeader">
-                    <div id="codeMiniStandaloneTitle">${safeName}</div>
-                    <button id="codeMiniStandaloneMenuBtn" type="button" onclick="return window.__codeMiniStandalone.toggleMenu(event)">⋮</button>
-                    <div id="codeMiniStandaloneControls">
-                        <button id="codeMiniStandaloneFav" type="button" onclick="return window.__codeMiniStandalone.toggleFav(event)">♡ Fav</button>
-                        <button id="codeMiniStandaloneTab" type="button" onclick="return window.__codeMiniStandalone.openNewTab(event)">📑 New Tab</button>
-                        <button id="codeMiniStandaloneFs" type="button" onclick="return window.__codeMiniStandalone.toggleFullscreen(event)">🔲 Fullscreen</button>
-                        <button id="codeMiniStandaloneBack" type="button" onclick="return window.__codeMiniStandalone.close(event)">✕ Close</button>
+                <button id="codeMiniStandaloneLauncher" type="button" onclick="return window.__codeMiniStandalone.toggleBar(event)">Game Bar</button>
+                <div id="codeMiniStandaloneHost"></div>
+                <template id="codeMiniStandaloneHeaderTemplate">
+                    <div id="codeMiniStandaloneHeader">
+                        <div id="codeMiniStandaloneTitle">${safeName}</div>
+                        <div id="codeMiniStandaloneControls">
+                            <button id="codeMiniStandaloneFav" type="button" onclick="return window.__codeMiniStandalone.toggleFav(event)">♡ Fav</button>
+                            <button id="codeMiniStandaloneTab" type="button" onclick="return window.__codeMiniStandalone.openNewTab(event)">📑 New Tab</button>
+                            <button id="codeMiniStandaloneFs" type="button" onclick="return window.__codeMiniStandalone.toggleFullscreen(event)">🔲 Fullscreen</button>
+                            <button id="codeMiniStandaloneBack" type="button" onclick="return window.__codeMiniStandalone.close(event)">✕ Close</button>
+                        </div>
+                        <button id="codeMiniStandaloneHideBtn" type="button" onclick="return window.__codeMiniStandalone.hideBar(event)">✕ Hide Bar</button>
                     </div>
-                </div>
+                </template>
                 <script>
                     (function() {
-                        // Use browser history to go back to Code Mini instead of saved URL
                         const blockedHosts = ['motorsnag.com'];
                         const gameId = ${JSON.stringify(gameId)};
                         const originalOpen = window.open ? window.open.bind(window) : null;
-                        const header = document.getElementById('codeMiniStandaloneHeader');
-                        let headerExpanded = false;
+                        const host = document.getElementById('codeMiniStandaloneHost');
+                        const template = document.getElementById('codeMiniStandaloneHeaderTemplate');
+                        const launcher = document.getElementById('codeMiniStandaloneLauncher');
+                        let header = null;
+                        let favButton = null;
+                        let fsButton = null;
+                        let barVisible = false;
+                        let ctrlHeld = false;
+
+                        const stop = (event) => {
+                            console.log('🟠 [stop] Called with event:', !!event);
+                            if (event) {
+                                console.log('🟠 [stop] Preventing default and stopping propagation');
+                                event.preventDefault();
+                                event.stopPropagation();
+                            }
+                            console.log('🟠 [stop] Returning false');
+                            return false;
+                        };
 
                         window.open = function(url) {
                             if (typeof url === 'string' && blockedHosts.some((host) => url.includes(host))) {
@@ -3644,80 +3757,114 @@ self.addEventListener('fetch', (event) => {
                             }
                         };
 
-                        const favButton = document.getElementById('codeMiniStandaloneFav');
-                        const fsButton = document.getElementById('codeMiniStandaloneFs');
-                        const menuBtn = document.getElementById('codeMiniStandaloneMenuBtn');
-                        let ctrlPressed = false;
-                        const stop = (event) => {
-                            console.log('🟠 [stop] Called with event:', !!event);
-                            if (event) {
-                                console.log('🟠 [stop] Preventing default and stopping propagation');
-                                event.preventDefault();
-                                event.stopPropagation();
-                            }
-                            console.log('🟠 [stop] Returning false');
-                            return false;
+                        const syncRefs = () => {
+                            header = host?.querySelector('#codeMiniStandaloneHeader') || null;
+                            favButton = host?.querySelector('#codeMiniStandaloneFav') || null;
+                            fsButton = host?.querySelector('#codeMiniStandaloneFs') || null;
                         };
+
                         const syncFav = () => {
                             if (!favButton) return;
                             favButton.textContent = readFavorites().includes(gameId) ? '♥ Fav' : '♡ Fav';
                         };
-                        syncFav();
 
-                        const collapseMenu = () => {
-                            if (headerExpanded) {
-                                headerExpanded = false;
-                                header.classList.remove('expanded');
-                            }
+                        const syncFullscreenButton = () => {
+                            if (!fsButton) return;
+                            fsButton.textContent = document.fullscreenElement ? '⬜ Exit FS' : '🔲 Fullscreen';
                         };
 
+                        const syncLauncherState = () => {
+                            if (!launcher) return;
+                            launcher.classList.toggle('ctrl-active', ctrlHeld);
+                            launcher.setAttribute('aria-disabled', ctrlHeld ? 'false' : 'true');
+                            launcher.setAttribute('tabindex', ctrlHeld ? '0' : '-1');
+                        };
+
+                        const mountBar = () => {
+                            if (barVisible) return header;
+                            const fragment = template?.content?.cloneNode(true);
+                            if (!fragment) return null;
+                            host.innerHTML = '';
+                            host.appendChild(fragment);
+                            syncRefs();
+                            syncFav();
+                            syncFullscreenButton();
+                            barVisible = true;
+                            if (launcher) launcher.hidden = true;
+                            return header;
+                        };
+
+                        const unmountBar = () => {
+                            barVisible = false;
+                            header = null;
+                            favButton = null;
+                            fsButton = null;
+                            if (host) host.innerHTML = '';
+                            if (launcher) launcher.hidden = false;
+                        };
+
+                        const ensureBar = () => header && header.isConnected ? header : mountBar();
+
                         window.__codeMiniStandalone = {
-                            toggleMenu(event) {
-                                if (event && event.ctrlKey) {
-                                    event.preventDefault();
-                                    event.stopPropagation();
-                                    headerExpanded = !headerExpanded;
-                                    if (headerExpanded) {
-                                        header.classList.add('expanded');
-                                    } else {
-                                        header.classList.remove('expanded');
-                                    }
+                            toggleBar(event) {
+                                if (barVisible) {
+                                    unmountBar();
+                                } else {
+                                    mountBar();
                                 }
-                                return false;
+                                return stop(event);
+                            },
+                            hideBar(event) {
+                                unmountBar();
+                                return stop(event);
                             },
                             toggleFav(event) {
+                                if (!ensureBar()) return stop(event);
                                 const favorites = readFavorites();
                                 const next = favorites.includes(gameId)
                                     ? favorites.filter((id) => id !== gameId)
                                     : favorites.concat(gameId);
                                 localStorage.setItem('gn_favorites', JSON.stringify(next));
                                 syncFav();
-                                collapseMenu();
                                 return stop(event);
                             },
                             openNewTab(event) {
+                                if (!ensureBar()) return stop(event);
                                 const clone = originalOpen ? originalOpen('about:blank', '_blank') : null;
                                 if (clone) {
+                                    const cloneDoc = new DOMParser().parseFromString(document.documentElement.outerHTML, 'text/html');
+                                    const cloneHost = cloneDoc.getElementById('codeMiniStandaloneHost');
+                                    const cloneLauncher = cloneDoc.getElementById('codeMiniStandaloneLauncher');
+                                    if (cloneHost) cloneHost.textContent = '';
+                                    if (cloneLauncher) {
+                                        cloneLauncher.hidden = false;
+                                        cloneLauncher.classList.remove('ctrl-active');
+                                    }
+                                    const cloneHeader = cloneDoc.getElementById('codeMiniStandaloneHeader');
+                                    if (cloneHeader && cloneHost && cloneHeader.parentNode === cloneHost) {
+                                        cloneHeader.remove();
+                                    }
                                     clone.document.open();
-                                    clone.document.write(document.documentElement.outerHTML);
+                                    clone.document.write(cloneDoc.documentElement.outerHTML);
                                     clone.document.close();
-                                    // Install popup guard in new tab
                                     if (typeof window.parent?.installPopupGuard === 'function') {
                                         try {
                                             setTimeout(() => clone?.installPopupGuard?.(clone), 100);
-                                        } catch(e) { console.log('Popup guard setup skipped'); }
+                                        } catch (e) {
+                                            console.log('Popup guard setup skipped');
+                                        }
                                     }
                                 }
-                                collapseMenu();
                                 return stop(event);
                             },
                             toggleFullscreen(event) {
+                                if (!ensureBar()) return stop(event);
                                 if (document.fullscreenElement) {
                                     document.exitFullscreen();
                                 } else {
                                     document.documentElement.requestFullscreen().catch(() => {});
                                 }
-                                collapseMenu();
+                                syncFullscreenButton();
                                 return stop(event);
                             },
                             close(event) {
@@ -3736,33 +3883,29 @@ self.addEventListener('fetch', (event) => {
                                     }
                                     return stop(event);
                                 }
-                                
-                                // Check sessionStorage state
+
                                 const fromLibrary = sessionStorage.getItem('codeMini_fromLibrary');
                                 const libraryUrl = sessionStorage.getItem('codeMini_libraryUrl');
-                                
+
                                 console.log('🔴 [close] SessionStorage state:', {
                                     fromLibrary: fromLibrary,
                                     hasUrl: !!libraryUrl,
                                     urlLength: libraryUrl?.length || 0,
                                     urlPreview: libraryUrl?.substring(0, 100) || 'NONE'
                                 });
-                                
-                                // Check if we came from the library page
+
                                 if (window.sessionStorage && sessionStorage.getItem('codeMini_fromLibrary') === 'true') {
                                     console.log('✅ [close] From library flag is TRUE');
                                     try {
                                         const libraryUrl = sessionStorage.getItem('codeMini_libraryUrl');
                                         console.log('📍 [close] Retrieved library URL:', libraryUrl?.substring(0, 100));
-                                        
-                                        // Clear the flags
+
                                         sessionStorage.removeItem('codeMini_fromLibrary');
                                         sessionStorage.removeItem('codeMini_libraryUrl');
                                         console.log('📍 [close] Cleared sessionStorage flags');
-                                        
+
                                         if (libraryUrl) {
                                             console.log('🟢 [close] Have valid URL, navigating to:', libraryUrl.substring(0, 100));
-                                            // Navigate back to library
                                             window.location.href = libraryUrl;
                                             console.log('✓ [close] Navigation initiated');
                                             return stop(event);
@@ -3784,56 +3927,32 @@ self.addEventListener('fetch', (event) => {
                                     return stop(event);
                                 }
                             },
-                            // Inject function for menu system setup
-                            inject: function() {
-                                console.log('✓ Game menu system initialized');
+                            inject() {
+                                console.log('✓ Game bar system initialized');
                                 return true;
                             }
                         };
 
-                        // Auto-inject menu system on load
                         window.__codeMiniStandalone.inject();
 
-                        // Collapse menu when clicking outside of header
-                        document.addEventListener('click', (e) => {
-                            if (!header.contains(e.target) && headerExpanded) {
-                                collapseMenu();
-                            }
-                        });
-
-                        document.addEventListener('fullscreenchange', () => {
-                            if (!fsButton) return;
-                            fsButton.textContent = document.fullscreenElement ? '⬜ Exit FS' : '🔲 Fullscreen';
-                        });
-
-                        // Global keyboard shortcut support - Ctrl+0 to toggle menu
+                        document.addEventListener('fullscreenchange', syncFullscreenButton);
                         document.addEventListener('keydown', (e) => {
-                            // Track Ctrl key state to enable menu button clicks
-                            if (e.ctrlKey || e.metaKey) {
-                                ctrlPressed = true;
-                                if (menuBtn) {
-                                    menuBtn.classList.add('ctrl-active');
-                                }
-                            }
-                            if ((e.ctrlKey || e.metaKey) && (e.key === '0' || e.key === ')')) {
-                                e.preventDefault();
-                                headerExpanded = !headerExpanded;
-                                if (headerExpanded) {
-                                    header.classList.add('expanded');
-                                } else {
-                                    header.classList.remove('expanded');
-                                }
+                            if (e.ctrlKey && !ctrlHeld) {
+                                ctrlHeld = true;
+                                syncLauncherState();
                             }
                         });
                         document.addEventListener('keyup', (e) => {
-                            // Disable menu button clicks when Ctrl is released
-                            if (!e.ctrlKey && !e.metaKey) {
-                                ctrlPressed = false;
-                                if (menuBtn) {
-                                    menuBtn.classList.remove('ctrl-active');
-                                }
+                            if (!e.ctrlKey && ctrlHeld) {
+                                ctrlHeld = false;
+                                syncLauncherState();
                             }
                         });
+                        window.addEventListener('blur', () => {
+                            ctrlHeld = false;
+                            syncLauncherState();
+                        });
+                        syncLauncherState();
                     })();
                 <\/script>
             `;
